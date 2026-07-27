@@ -1,0 +1,323 @@
+
+----------------------------------------------------------------------------------
+Main 
+
+cd 'C:\Users\etien\Dropbox\New 202607\Conditional Forecast' 
+addpath(pwd)
+
+ob = struct();
+ob.files     = struct('house','1810020501-eng.csv', ...
+                      'cpi',  '1810000601-eng.csv', ...
+                      'unemp','1410028701-eng.csv');
+ob.rows      = struct('unemp','Unemployment rate');
+ob.sample    = [1992 1];
+ob.cacheFile = 'panel_k9.mat';        % new name: different variable set
+ob.covid     = [2020 4; 2020 6];
+ob.seasonalDummies = true;            % bcne is seasonal (R2 = 0.12, F = 5.0)
+ob.gate      = false;
+ob.bands     = true;
+ob.bandOpts  = struct('nDraws', 400);
+ob.H         = 48;                    % estimate over four years
+ob.figStart  = [2024 1];
+ob.figEnd    = [2028 6];              % but plot two
+ob.paperFigs = false;
+ob.diffFigs  = false;
+ob.p     = 12;
+ob.prior = struct('lambda', 0.2);
+
+ob.extra = { struct('name','bcne','file','BCPI_MONTHLY-sd-1972-01-01.csv', ...
+                    'row','M.BCNE','tcode','dlog','after','oil'), ...
+             struct('name','long','id','IRLTLT01CAM156N', ...
+                    'tcode','level','after','rate') };
+----------------------------------------------------------------------------------
+Single Scenarios 
+
+
+cd 'C:\Users\etien\Dropbox\New 202607\Conditional Forecast' 
+addpath(pwd)
+
+ob = struct();
+ob.files     = struct('house','1810020501-eng.csv', ...
+                      'cpi',  '1810000601-eng.csv', ...
+                      'unemp','1410028701-eng.csv');
+ob.rows      = struct('unemp','Unemployment rate');
+ob.sample    = [1992 1];
+ob.cacheFile = 'panel_k9.mat';
+ob.covid     = [2020 4; 2020 6];
+ob.seasonalDummies = true;
+ob.gate      = false;
+ob.H         = 48;
+ob.figEnd    = [2028 6];
+ob.paperFigs = false;
+ob.diffFigs  = false;
+ob.p         = 12;
+ob.prior     = struct('lambda', 0.2);
+
+ob.extra = { ...
+  struct('name','bcne','file','BCPI_MONTHLY-sd-1972-01-01.csv', ...
+         'row','M.BCNE','tcode','dlog','after','oil'), ...
+  struct('name','long', 'id','IRLTLT01CAM156N','tcode','level','after','rate'),  ... % 10y GoC
+  struct('name','uscpi','id','CPIAUCSL',        'tcode','dlog', 'after','usip'),  ... % foreign block, near usip
+  struct('name','usrate','id','TB3MS',          'tcode','level','after','uscpi'), ... % US 3m T-bill
+  struct('name','emp',  'id','LFEMTTTTCAM647S', 'tcode','dlog', 'after','unemp'), ... % CA employment
+  struct('name','tsx',  'id','SPASTT01CAM661N', 'tcode','dlog', 'after','long')   ... % equity, late
+};
+
+% ---- pass 1: read the forecast origin, no bands, no figures ----
+ob.bands = false;  ob.figures = false;
+R0 = main_risk_scenarios('fred', ob);
+L  = R0.data.levels(end,:);  ix = R0.data.idx;
+originMonth = R0.data.dates(end);
+fprintf('origin %s: oil %.1f, unemp %.2f%%, rate %.2f%%\n', ...
+        datestr(originMonth,'yyyy-mm'), L(ix.oil), L(ix.unemp), L(ix.rate));
+
+% ---- pass 2: scenarios calibrated to that origin ----
+ov = datevec(originMonth);
+ob.figStart = [ov(1)-2, ov(2)];        % two years of history before the origin
+ob.bands    = true;
+ob.figures  = true;
+ob.bandOpts = struct('nDraws', 400);
+ob.scenarios = { ...
+  struct('var','oil',  'type','ramp', 'to',round(1.30*L(ix.oil)), 'months',3, ...
+         'name',sprintf('Oil +30%% (to $%d)', round(1.30*L(ix.oil)))), ...
+  struct('var','unemp','type','hold', 'at',max(L(ix.unemp)-1.5, 4.5), 'window',[1 12], ...
+         'name','Tight labour market, 1yr'), ...
+  struct('var','rate', 'type','policy','step',0.25,'peak',L(ix.rate)+1.5,'hold',12, ...
+         'floor',L(ix.rate), 'name','Gradual tightening (+150bp)'), ...
+  struct('var','usip', 'type','replay','from',[2008 1], ...
+         'name','U.S. recession') };
+Rb = main_risk_scenarios('fred', ob);
+
+----------------------------------------------------------------------------------
+- Joint Scenarios : 
+
+oj = ob;
+oj.scenarios = { ...
+  % counterpart to your "no policy response": recession WITH easing
+  struct('name','U.S. recession, BoC eases', 'parts',{{ ...
+     struct('var','usip','type','replay','from',[2008 1],'months',24), ...
+     struct('var','rate','type','ramp','to',max(L(ix.rate)-2.0, 0.25),'months',6) }}), ...
+  % terms-of-trade boom the Bank leans against
+  struct('name','Oil boom + tightening', 'parts',{{ ...
+     struct('var','oil', 'type','ramp','to',round(1.40*L(ix.oil)),'months',6), ...
+     struct('var','rate','type','policy','step',0.25,'peak',L(ix.rate)+1.0,'hold',12,'floor',L(ix.rate)) }}), ...
+  % global risk-off: equity crash, flight-to-quality yields, weaker CAD
+  struct('name','Risk-off', 'parts',{{ ...
+     struct('var','tsx', 'type','replay','from',[2008 9],'months',12), ...
+     struct('var','long','type','ramp','to',max(L(ix.long)-1.0, 0.25),'months',3), ...
+     struct('var','fx',  'type','ramp','to',1.45,'months',3) }}), ...
+  % imported inflation, Fed-led — Canada responds endogenously
+  struct('name','U.S. reflation', 'parts',{{ ...
+     struct('var','uscpi', 'type','replay','from',[2021 4],'months',18), ...
+     struct('var','usrate','type','ramp','to',L(ix.usrate)+2.0,'months',9) }}) 
+ % Stagflation
+ struct('name','Stagflation', 'parts',{{ ...
+     struct('var','oil',  'type','ramp','to',110,'months',6), ...
+     struct('var','unemp','type','hold','at',8.0) }}), ...
+% US recession - No policy Response 
+  struct('name','U.S. recession, no policy response', 'parts',{{ ...
+     struct('var','usip','type','replay','from',[2008 1],'months',24), ...
+     struct('var','rate','type','hold') }}) };
+
+Rj = main_risk_scenarios('fred', oj);
+
+
+----------------------------------------------------------------------------------
+- Temporary Shocks : 
+
+op = ob;
+op.figSub = 'temporary_shocks';
+op.scenarios = { ...
+  % your original — pulse: ramp to $110 over 3m, hold 3m, then FREE
+  struct('var','oil','type','pulse','to',110,'months',3,'hold',3, ...
+         'name','Oil spike, 6 months'), ...
+  % .window: oil pinned at $110 for months 1-6 only, tail left to the model
+  struct('var','oil','type','hold','at',110,'window',[1 6], ...
+         'name','Oil at $110, 6m then free'), ...
+  % temporary tightening that then normalises endogenously
+  struct('var','rate','type','pulse','to',L(ix.rate)+1.5,'months',6,'hold',6, ...
+         'name','Rate +150bp, 1yr then free'), ...
+  % transitory labour tightness, horizons 1-9 only
+  struct('var','unemp','type','hold','at',max(L(ix.unemp)-1.5,4.5),'window',[1 9], ...
+         'name','Tight labour, 9m then free'), ...
+  % transitory CAD depreciation, first quarter only (fx up = CAD weaker)
+  struct('var','fx','type','ramp','to',1.45,'months',3,'window',[1 3], ...
+         'name','CAD weakens, 1Q then free'), ...
+  % replay a short equity drawdown, then let it recover freely
+  struct('var','tsx','type','replay','from',[2008 9],'months',6, ...
+         'name','Equity selloff, 6m then free') };
+Rp = main_risk_scenarios('fred', op);
+
+
+----------------------------------------------------------------------------------
+
+Counterfactual — "what if the Bank had tightened?"
+
+ixr = Rb.tr.idx.rate;  ixc = Rb.tr.idx.cpi;  ixu = Rb.tr.idx.unemp;
+t0  = find(Rb.tr.dates == datenum(2021,12,1));
+Hcf = 24;
+rActual = Rb.tr.Y(t0+1:t0+Hcf, ixr);
+
+Ct = wzCounterfactual(Rb.model, Rb.tr.Y, Rb.tr.dates, [2021 12], ...
+                      ixr, rActual + 1.0, Hcf, [], ixr);       % tighter BoC, confined to policy shock
+d  = Ct.dates;
+
+pA = 100*cumsum(Ct.actual(:,ixc));  pC = 100*cumsum(Ct.cf(:,ixc));   % price: dlog -> cumulate
+uA = Ct.actual(:,ixu);              uC = Ct.cf(:,ixu);                % unemp: already a level
+
+figure('Color','w','Position',[100 100 1200 500]);
+
+subplot(1,2,1);                                    % ---- price level ----
+fill([d; flipud(d)], [pA; flipud(pC)], [0.90 0.95 0.90], 'EdgeColor','none'); hold on  % drop on Octave
+hA = plot(d, pA, '-',  'LineWidth', 3, 'Color', [0.15 0.15 0.15]);
+hC = plot(d, pC, '--', 'LineWidth', 3, 'Color', [0.15 0.55 0.25]);
+datetick('x','yyyy-mm','keeplimits'); xlim([d(1) d(end)]);
+grid on; set(gca,'FontSize',12,'LineWidth',1.2);
+ylabel('cumulative price level, %'); title('Price level');
+legend([hA hC], {'actual','tighter BoC (+100bp)'}, 'Location','northwest','FontSize',11);
+gP = pC(end)-pA(end);
+text(d(end), pC(end), sprintf('  %+.2f pp', gP), 'FontSize',12, ...
+     'Color',[0.15 0.55 0.25], 'VerticalAlignment','middle');
+
+subplot(1,2,2);                                    % ---- unemployment ----
+fill([d; flipud(d)], [uA; flipud(uC)], [0.98 0.92 0.88], 'EdgeColor','none'); hold on  % drop on Octave
+hA2 = plot(d, uA, '-',  'LineWidth', 3, 'Color', [0.15 0.15 0.15]);
+hC2 = plot(d, uC, '--', 'LineWidth', 3, 'Color', [0.85 0.45 0.10]);
+datetick('x','yyyy-mm','keeplimits'); xlim([d(1) d(end)]);
+grid on; set(gca,'FontSize',12,'LineWidth',1.2);
+ylabel('unemployment rate, %'); title('Unemployment');
+legend([hA2 hC2], {'actual','tighter BoC (+100bp)'}, 'Location','northwest','FontSize',11);
+gU = uC(end)-uA(end);
+text(d(end), uC(end), sprintf('  %+.2f pp', gU), 'FontSize',12, ...
+     'Color',[0.85 0.45 0.10], 'VerticalAlignment','middle');
+outdir = fullfile('figures','counterfactual');
+if ~exist(outdir,'dir'), mkdir(outdir); end
+print(gcf, fullfile(outdir,'tighter_boc_price_unemp.png'), '-dpng', '-r150');
+
+----------------
+What if the 2022 commodity spike hadn't happened?
+
+ixo = Rb.tr.idx.oil;
+% oil enters in log-differences, so "hold the LEVEL at its Dec-2021 value"
+% is a path of ZEROS in transformed units (no monthly growth), not r0.
+C2 = wzCounterfactual(Rb.model, Rb.tr.Y, Rb.tr.dates, [2021 12], ...
+                      ixo, zeros(Hcf,1), Hcf, [], ixo);        % confine to the oil shock
+pA = 100*cumsum(C2.actual(:,ixc));  pC = 100*cumsum(C2.cf(:,ixc));
+fprintf('no 2022 commodity spike -> price level %+.2f pp vs actual after %d months\n', ...
+        pC(end)-pA(end), Hcf);
+fprintf('unemployment at end: actual %.2f%%, counterfactual %.2f%%\n', ...
+        C2.actual(end,ixu), C2.cf(end,ixu));
+plot(C2.dates, 100*[cumsum(C2.actual(:,ixc)) cumsum(C2.cf(:,ixc))]);
+datetick('x','yyyy-mm'); legend('actual','no oil spike'); ylabel('price level, %');
+
+----------------------------------------------------------------------------------
+Soft conditions — add .sd to any spec:
+
+os = ob;
+os.figSub = 'soft_conditions';
+os.scenarios = { ...
+  struct('var','rate','type','policy','step',0.25,'peak',4,'hold',8,'floor',2.5, ...
+         'sd',0.4, 'name','Tightening, roughly'), ...
+  struct('var','oil','type','pulse','to',110,'months',3,'hold',3, ...
+         'sd',0.03,'name','Oil spike, loosely held'), ...
+  struct('var','unemp','type','hold','at',5.0,'window',[1 12],'sd',0.5, ...
+         'name','Unemp ~5%, 1yr (soft)'),                                    ... % soft + window
+  struct('var','rate','type','ramp','to',L(ix.rate)+1.0,'months',6, ...
+         'sd',[0.1*ones(6,1); 0.5*ones(ob.H-6,1)], ...
+         'name','Rate +100bp, tight then loose'),                           ... % per-horizon sd
+  struct('var','fx','type','ramp','to',1.42,'months',4,'sd',0.012, ...
+         'name','CAD ~1.42 (soft)')                                         ... % soft, dlog units
+};
+Rs = main_risk_scenarios('fred', os);
+
+----------------------------------------------------------------------------------
+Impulse Responses 
+
+cd 'C:\Users\etien\Dropbox\New 202607\Conditional Forecast' 
+addpath(pwd)
+ob = struct();
+ob.files     = struct('house','1810020501-eng.csv', ...
+                      'cpi',  '1810000601-eng.csv', ...
+                      'unemp','1410028701-eng.csv');
+ob.rows      = struct('unemp','Unemployment rate');
+ob.sample    = [1992 1];
+ob.cacheFile = 'panel_k13.mat';           % was panel_k9 — bumped for the larger panel
+ob.covid     = [2020 4; 2020 6];
+ob.seasonalDummies = true;
+ob.gate      = false;
+ob.figures   = false;
+ob.p         = 12;
+ob.extra = { ...
+  struct('name','bcne','file','BCPI_MONTHLY-sd-1972-01-01.csv', ...
+         'row','M.BCNE','tcode','dlog','after','oil'), ...
+  struct('name','long', 'id','IRLTLT01CAM156N','tcode','level','after','rate'),  ... % 10y GoC
+  struct('name','emp',  'id','LFEMTTTTCAM647S', 'tcode','dlog', 'after','unemp'), ... % CA employment
+  struct('name','tsx',  'id','SPASTT01CAM661N', 'tcode','dlog', 'after','long')   ... % equity, late
+};
+
+R12 = main_risk_scenarios('fred', ob);
+I12 = irfCholesky(R12, 48, struct('scaleTo', 1, 'boot', 400));
+figureIRF(I12, {'rate','oil'}, fullfile('figures','irf'), struct('prefix','irf_k13_p12'));
+
+----------------------------------------------------------------------------------
+Variance Decomposition
+
+[shares, MSPE] = varianceDecomp(Rb.model, 48, [], [3 12 24 48], Rb.data.names, Rb.data.names);
+ix = Rb.data.idx;
+shocks  = {'oil','usip','unemp','rate'};
+targets = {'cpi','house','unemp','rate','fx'};
+Hrep    = [3 12 24 48];
+
+if ~exist('figures','dir'), mkdir('figures'); end
+fid = fopen(fullfile('figures','fevd_rows.tex'),'w');
+for s = 1:numel(shocks)
+  fprintf(fid,'\\multicolumn{%d}{@{}l}{\\textit{Panel %c: %s shock}}\\\\\n', ...
+          numel(targets)+1, 'A'+s-1, shocks{s});
+  for hh = Hrep
+    v = 100*arrayfun(@(t) shares(ix.(targets{t}), ix.(shocks{s}), hh), 1:numel(targets));
+    fprintf(fid,'%d', hh); fprintf(fid,' & %.0f', v); fprintf(fid,'\\\\\n');
+  end
+  fprintf(fid,'\\addlinespace\n');
+end
+fclose(fid);
+
+Hn = 48;
+groups = struct('Commodity',{{'oil','bcne'}}, 'US',{{'usip','uscpi','usrate'}}, ...
+                'CA_prices',{{'cpi','house'}}, 'CA_labour',{{'unemp','emp'}}, ...
+                'CA_finpol',{{'rate','long','tsx','fx'}});
+gnames = fieldnames(groups);
+outdir = fullfile('figures','fevd'); if ~exist(outdir,'dir'), mkdir(outdir); end
+
+for tv = {'cpi','house','unemp','rate','fx'}
+  k = ix.(tv{1});
+  G = zeros(Hn, numel(gnames));
+  for g = 1:numel(gnames)
+    cols = cellfun(@(nm) ix.(nm), groups.(gnames{g}));
+    G(:,g) = 100*squeeze(sum(shares(k, cols, 1:Hn), 2));
+  end
+  figure('Color','w','Position',[100 100 780 460]);
+  area(1:Hn, G, 'LineStyle','none'); grid on; ylim([0 100]); xlim([1 Hn]);
+  set(gca,'FontSize',12,'LineWidth',1.1);
+  xlabel('horizon (months)'); ylabel('share of forecast-error variance, %');
+  title(sprintf('Variance decomposition of %s', Rb.data.names{k}));
+  legend(strrep(gnames,'_',' '), 'Location','eastoutside','FontSize',11);
+  print(gcf, fullfile(outdir, sprintf('fevd_%s.png', tv{1})), '-dpng','-r150');
+end
+
+----------------------------------------------------------------------------------
+
+- Identification under recursive ordering; could identify using other methods and change bkConditional
+
+
+- Joint Scenarios :
+	- Stagflation: oil up and unemployment up together. Singly, each is a demand-type shock in this model; jointly they force the system onto a supply-shock path, which is a genuinely different exercise.
+	- US recession with no policy response: constrain the US IP path and hold the rate fixed. That's a counterfactual policy experiment — what the economy does if the Bank doesn't cut — and it's the kind of question the WZ setup is actually built for.
+	- Tariff shock: constrain US activity down and the exchange rate up simultaneously, since a tariff hits both and constraining only one lets the model offset it through the other.
+
+- Partial-horizon conditions already work via .window and are underused. "Oil spikes for six months then normalises" is more realistic than a permanent plateau, and it lets the model tell you the persistence rather than you imposing it.
+
+- In-sample counterfactuals. Nothing restricts WZ to the forecast horizon. Re-run it over 2022–23 holding the rate at 0.25% and you get "what if the Bank hadn't tightened" — same algebra, different sample. That's a paper-sized exercise on its own.
+
+- Soft conditions. WZ's original contribution includes conditioning on a distribution for the constrained variable rather than a point path — oil in [110, 130] rather than exactly 120. That gives the constrained variable a band too, which is more honest for something labelled a risk scenario, and it's a modest change to the same projection algebra.
+
+                                                                                                                                                                                                                                                  

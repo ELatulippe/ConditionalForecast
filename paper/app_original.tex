@@ -1,0 +1,278 @@
+%======================================================================
+% Appendix A -- Foundations. Written to be \input by paper.tex (its \section
+% header and intro live there). These are the derivations the NEW results of
+% Appendix B take as given; each subsection ends with a pointer to where it is
+% used. The source paper's variance decomposition and OOS metrics are recorded
+% at the end for reference (they are not prerequisites for the new results).
+%======================================================================
+
+\subsection{Reduced form and companion form}\label{app:redcomp}
+The starting point is the reduced-form VAR
+\begin{equation}
+y_t=\nu+A_1y_{t-1}+A_2y_{t-2}+\cdots+A_py_{t-p}+u_t,
+\qquad \E[u_t]=0,\ \ \E[u_tu_t\tp]=\Sigma_u,
+\tag{1}\label{aeq:red}
+\end{equation}
+a $K$-dimensional linear autoregression of order $p$. ``Reduced form'' means
+$u_t$ collects statistical innovations with \emph{no} economic interpretation;
+the $A_i$ summarise own- and cross-dynamics. Because every equation shares the
+same right-hand-side regressors, the seemingly-unrelated-regression system
+collapses to equation-by-equation OLS.
+
+\paragraph{Companion (state-space) form.} Stacking the current and $p-1$ most
+recent vectors turns \eqref{aeq:red} into a first-order system,
+\begin{equation}
+Y_t=\mu+AY_{t-1}+U_t,
+\tag{2}\label{aeq:comp}
+\end{equation}
+with
+\[
+Y_t=\begin{bmatrix} y_t\\ y_{t-1}\\ \vdots\\ y_{t-p+1}\end{bmatrix},\quad
+\mu=\begin{bmatrix}\nu\\0\\\vdots\\0\end{bmatrix},\quad
+U_t=\begin{bmatrix}u_t\\0\\\vdots\\0\end{bmatrix},\quad
+A=\begin{bmatrix}
+A_1 & A_2 & \cdots & A_{p-1} & A_p\\
+I_K & 0 & \cdots & 0 & 0\\
+0 & I_K & \cdots & 0 & 0\\
+\vdots & & \ddots & & \vdots\\
+0 & 0 & \cdots & I_K & 0
+\end{bmatrix}.
+\]
+Reading \eqref{aeq:comp} block-row by block-row: the first block row is exactly
+\eqref{aeq:red}; block row $i\ge2$ is the identity $y_{t-i+1}=y_{t-i+1}$, which
+merely carries lags forward in the state. With the top-block selector
+$J=[\,I_K\ 0\ \cdots\ 0\,]\in\R^{K\times Kp}$ one has the identities used
+repeatedly below,
+\begin{equation}
+y_t=JY_t,\qquad \mu=J\tp\nu,\qquad U_t=J\tp u_t.
+\tag{$\star$}\label{aeq:star}
+\end{equation}
+Covariance-stationarity requires all eigenvalues of $A$ to lie inside the unit
+circle.
+
+\medskip
+\noindent\textit{Used in:} everything below; the companion matrix $A$ is exported
+to the dashboard so the counterfactual baseline (\S\ref{app:cf}) can be iterated
+in the browser from any in-sample origin.
+
+\subsection{Forward iteration: the \texorpdfstring{$h$}{h}-step recursion}\label{app:recursion}
+Iterating \eqref{aeq:comp} forward $h$ periods gives
+\begin{equation}
+Y_{t+h}=\Bigg(\sum_{j=0}^{h-1}A^{j}\Bigg)\mu+A^{h}Y_t+\sum_{j=0}^{h-1}A^{j}U_{t+h-j}.
+\tag{3}\label{aeq:recursion}
+\end{equation}
+
+\paragraph{Derivation (induction on $h$).} The base case $h=1$ is
+\eqref{aeq:comp}. Assuming \eqref{aeq:recursion} at horizon $h$ and applying
+\eqref{aeq:comp} once more, $Y_{t+h+1}=\mu+AY_{t+h}+U_{t+h+1}$, substitution gives
+\[
+Y_{t+h+1}
+=\underbrace{\mu+\sum_{j=0}^{h-1}A^{j+1}\mu}_{=\sum_{j=0}^{h}A^{j}\mu}
++A^{h+1}Y_t
++\underbrace{\sum_{j=0}^{h-1}A^{j+1}U_{t+h-j}+U_{t+h+1}}_{=\sum_{j=0}^{h}A^{j}U_{t+h+1-j}},
+\]
+where the last bracket re-indexes $j\mapsto j+1$ (turning the sum into
+$\sum_{j=1}^{h}A^{j}U_{t+h+1-j}$) and the stray $U_{t+h+1}$ supplies the missing
+$j=0$ term. This is \eqref{aeq:recursion} at $h+1$.
+
+\medskip
+\noindent\textit{Used in:} the baseline (\S\ref{app:base}) is its conditional
+mean; the moving-average map (\S\ref{app:ma}) is its stochastic part.
+
+\subsection{The baseline forecast}\label{app:base}
+Taking $\E[\,\cdot\mid\Fset_t]$ of \eqref{aeq:recursion} annihilates every future
+shock, since $U_{t+h-j}$ is dated $t+h-j\ge t+1$ for $j=0,\dots,h-1$ and hence
+unforecastable, $\E[U_{t+h-j}\mid\Fset_t]=0$. Premultiplying by $J$ and using
+$\mu=J\tp\nu$ from \eqref{aeq:star},
+\begin{equation}
+\E[y_{t+h}\mid\Fset_t]
+=\Bigg(\sum_{j=0}^{h-1}JA^{j}J\tp\Bigg)\nu+JA^{h}Y_t.
+\tag{4}\label{aeq:base}
+\end{equation}
+Under quadratic loss this conditional expectation is the optimal point forecast;
+it is the \emph{baseline scenario} against which every conditional forecast and
+every counterfactual is measured.
+
+\medskip
+\noindent\textit{Used in:} the constraint right-hand side
+$r=(\text{target}-\text{baseline})$ of the main text~\eqref{eq:restriction} and the counterfactual
+origin baseline $F_{\text{base}}$ (\S\ref{app:cf}).
+
+\subsection{Forecast error, impulse responses, and the stacked map}\label{app:ma}
+Subtracting \eqref{aeq:base} from \eqref{aeq:recursion} leaves only the shock
+term; projecting onto the top block with $U_{t+h-j}=J\tp u_{t+h-j}$ gives the
+deviation of any realised path from the baseline,
+\begin{equation}
+y_{t+h}-\E[y_{t+h}\mid\Fset_t]
+=\sum_{j=0}^{h-1}JA^{j}J\tp\,u_{t+h-j}
+=\sum_{j=0}^{h-1}\Phi_j\,u_{t+h-j},
+\qquad \Phi_j:=JA^{j}J\tp.
+\tag{5}\label{aeq:dev}
+\end{equation}
+The $\Phi_j$ are the reduced-form moving-average (impulse-response) coefficients,
+with $\Phi_0=I_K$. \textbf{Economic reading:} forcing a variable onto a scenario
+path (left-hand side $\neq0$) is \emph{equivalent} to imposing a particular
+realisation of future innovations (right-hand side); the scenario cannot happen
+``for free,'' and the same innovations move every other variable through $\Phi_j$.
+
+\paragraph{The stacked map.} Collect \eqref{aeq:dev} for $h=1,\dots,H$. Writing
+$\Delta y=[\,(y_{t+1}-\E)\tp,\dots,(y_{t+H}-\E)\tp\,]\tp\in\R^{KH}$ and stacking
+the innovations conformably, the deviation is a single linear image of the future
+shocks,
+\begin{equation}
+\Delta y=\Mmap_u\,u,\qquad
+\Mmap_u=\begin{bmatrix}
+\Phi_0 & & &\\
+\Phi_1 & \Phi_0 & &\\
+\vdots & & \ddots &\\
+\Phi_{H-1} & \Phi_{H-2} & \cdots & \Phi_0
+\end{bmatrix},
+\tag{5$'$}\label{aeq:stack}
+\end{equation}
+a block-lower-triangular $KH\times KH$ matrix (block $(h,s)=\Phi_{h-s}$ for
+$s\le h$, zero otherwise). Once a structural impact matrix $D$ is identified
+(\S\ref{app:ident2}), the same construction with $\Theta_j:=\Phi_jD$ in place of
+$\Phi_j$ gives the \emph{structural} stacked map $\Mmap$ of the main text
+\eqref{eq:Mmap}, whose diagonal block is $\Theta_0=D$.
+
+\medskip
+\noindent\textit{Used in:} $\Mmap$ is \emph{the} object of the paper. The
+restriction rows $R$ are selected rows of $\Mmap$; the propagation
+$\Delta y=\Mmap\beps$ delivers every conditional forecast, band
+(\S\ref{app:shock}, \S\ref{app:param}), and counterfactual (\S\ref{app:cf}). The
+coefficients $\Theta_j$ are exported to the dashboard, which rebuilds $\Mmap$ in
+the browser.
+
+\subsection{The conditioning restriction and the minimum-norm shock path}\label{app:minnorm}
+A scenario fixes target values for a subset of variables over some horizons.
+Reading the corresponding rows off \eqref{aeq:stack} yields a linear system in the
+stacked future innovations,
+\begin{equation}
+R\,u=r,
+\tag{5$''$}\label{aeq:Rur}
+\end{equation}
+where $r\in\R^{m}$ is the gap between the scenario values and the baseline
+forecasts on the $m$ constrained cells and $R\in\R^{m\times KH}$ collects the
+associated rows of the MA coefficients. Because a scenario fixes far fewer cells
+than there are free shocks ($m<KH$), \eqref{aeq:Rur} is underdetermined; WZ, after
+Doan--Litterman--Sims, select the minimum-norm solution.
+
+\paragraph{Derivation (constrained minimisation).} Solve
+$\min_u\tfrac12u\tp u$ s.t.\ $Ru=r$. The Lagrangian
+$\mathcal L=\tfrac12u\tp u+\lambda\tp(r-Ru)$ has first-order conditions
+$u=R\tp\lambda$ and $Ru=r$; substituting, $RR\tp\lambda=r$, so
+$\lambda=(RR\tp)^{-1}r$ (full row rank $m$) and
+\begin{equation}
+\hat u=R\tp(RR\tp)^{-1}r=\pinv{R}\,r.
+\tag{5$'''$}\label{aeq:minnorm}
+\end{equation}
+Adding $\hat u$ back through \eqref{aeq:stack} delivers the conditional forecast
+for every variable.
+
+\begin{remark}[dimensions of the inverse]
+With $R$ of size $m\times KH$ and $m<KH$, $RR\tp$ ($m\times m$) is invertible
+while $R\tp R$ ($KH\times KH$) is singular. A source-paper display that writes
+$\hat u=R\tp(R\tp R)^{-1}r$ should read $(RR\tp)^{-1}$ as in \eqref{aeq:minnorm};
+the two coincide only under the transposed storage convention for $R$. The
+substance is unchanged.
+\end{remark}
+
+\begin{remark}[``most likely'' shocks]
+If $u\sim N(0,I_{KH})$ then \eqref{aeq:minnorm} is the mode (equivalently the mean)
+of $u\mid Ru=r$: minimising $u\tp u$ maximises the Gaussian density. This is why
+$\hat u$ is the most likely combination of shocks consistent with the scenario ---
+the reading the uncertainty derivations of Appendix~\ref{app:new} make precise.
+\end{remark}
+
+\medskip
+\noindent\textit{Used in:} \eqref{aeq:minnorm} is the object every new derivation
+extends --- soft conditioning replaces $(RR\tp)^{-1}$ by $(RR\tp+\Om)^{-1}$
+(\S\ref{app:soft}); the shock band conditions the Gaussian around $\hat\beps$
+(\S\ref{app:shock}); the counterfactual perturbs a realised $\hat u$
+(\S\ref{app:cf}). The structural-space version $\hat\beps=\pinv{R}r$ used in the
+main text is \eqref{aeq:minnorm} with $u=D\eps$ (\S\ref{app:norm}).
+
+\subsection{Structural identification}\label{app:ident2}
+The reduced-form innovation is decomposed as $u_t=D\eps_t$ with orthonormal
+structural shocks,
+\begin{equation}
+\E[\eps_t]=0,\quad \E[\eps_t\eps_t\tp]=I_K
+\ \Longrightarrow\ \Sigma_u=DD\tp.
+\tag{6}\label{aeq:struct}
+\end{equation}
+
+\paragraph{Order condition and Cholesky.} A symmetric $\Sigma_u$ has $K(K+1)/2$
+distinct entries while $D$ has $K^2$; the equations $\Sigma_u=DD\tp$ fall short by
+$K^2-K(K+1)/2=K(K-1)/2$ restrictions. Requiring $D$ lower-triangular zeros out
+exactly its $K(K-1)/2$ upper entries, closing the gap, and with a positive
+diagonal the solution is the unique Cholesky factor
+$D=\chol(\hat\Sigma_u)$, with $\hat\Sigma_u=\sum_t\hat u_t\hat u_t\tp/(T-Kp-1)$. A
+lower-triangular $D$ means shock $k$ moves variables $1,\dots,k-1$ only with a
+lag but $k,\dots,K$ contemporaneously, so the recursive ordering of $y_t$ is
+material (global variables first, sticky prices ahead of the activity/policy
+block, forward-looking financial variables last). The structural impulse
+responses are $\Theta_j=\Phi_jD$.
+
+\medskip
+\noindent\textit{Used in:} $D=\Theta_0$ is the diagonal block of $\Mmap$ and the
+change of variables $u=D\eps$ that turns the WZ norm into the Mahalanobis norm
+(\S\ref{app:norm}); the whole apparatus is identification-agnostic --- replace
+the Cholesky $D$ by a sign-restricted or instrument-based $D$ and every formula in
+Appendix~\ref{app:new} is unchanged.
+
+\subsection{Reference: variance decomposition and out-of-sample metrics}\label{app:refresults}
+The following source-paper results are recorded for completeness; they are
+\emph{not} prerequisites for the new derivations of Appendix~\ref{app:new}.
+
+\paragraph{Forecast-error variance decomposition.} With the structural forecast
+error $y_{t+h}-\E y_{t+h}=\sum_{j=0}^{h-1}\Theta_j\eps_{t+h-j}$ and orthonormal
+$\eps$, the mean squared prediction error and its per-shock split are
+\begin{equation}
+\MSPE(h)=\sum_{j=0}^{h-1}\Theta_j\Theta_j\tp,\qquad
+\MSPE_{k,l}(h)=\sum_{j=0}^{h-1}\theta_{k,l,j}^2,
+\tag{7$'$,\,7$''$}\label{aeq:fevd}
+\end{equation}
+where $\theta_{k,l,j}=[\Theta_j]_{kl}$; the reported share is
+$\MSPE_{k,l}(h)/\sum_{l}\MSPE_{k,l}(h)$, and orthogonality is what makes the shares
+sum to one across $l$.
+
+\paragraph{Out-of-sample evaluation (planned exercise).} Point accuracy uses an
+AR($p$) benchmark --- \eqref{aeq:red} with diagonal $A_i$ --- and $h$-step errors
+$e^{(h,m)}_{k,t}$ aggregated into
+\begin{equation}
+\RMSE(k,h,m)=\sqrt{\tfrac{1}{\bar t-\underline t}\textstyle\sum_t\big(e^{(h,m)}_{k,t}\big)^2},
+\qquad
+\MAE(k,h,m)=\tfrac{1}{\bar t-\underline t}\textstyle\sum_t\big|e^{(h,m)}_{k,t}\big|,
+\tag{9,\,10}\label{aeq:rmse}
+\end{equation}
+each reported relative to the benchmark (a ratio below one favours the VAR).
+Density accuracy uses the continuous ranked probability score in its quantile
+(``pinball'') form: with $\rho_\tau(u)=u(\tau-\Id(u<0))$ and predictive quantiles
+$\hat q^{(h,m)}_{\tau,k,t}$ on a grid $\tau_1<\cdots<\tau_N$,
+\begin{equation}
+\CRPS(k,h,m)=\frac{2}{N-1}\sum_{n=1}^{N}
+\Bigg(\frac{1}{\bar t-\underline t}\sum_{t}\rho_{\tau_n}\!\big(y_{k,t}-\hat q^{(h,m)}_{\tau_n,k,t}\big)\Bigg),
+\tag{11}\label{aeq:crps}
+\end{equation}
+the trapezoidal discretisation of
+$\CRPS(F,y)=2\int_0^1\rho_\tau(y-F^{-1}(\tau))\,d\tau$, which needs only the
+predictive quantiles, not the full density. These metrics drive the planned
+backtesting harness (\S\ref{sec:oos}).
+
+\subsection*{Summary of the foundation chain}
+\[
+\underbrace{(1)\Rightarrow(2)}_{\text{companion}}
+\ \Rightarrow\
+\underbrace{(3)}_{\text{iterate}}
+\ \Rightarrow\
+\begin{cases}
+\E[\cdot\mid\Fset_t]\ \Rightarrow\ (4)\ \text{baseline}\\[2pt]
+\text{deviation}\ \Rightarrow\ (5),(5')\ \Rightarrow\ \Mmap\ \text{(stacked map)}\\[2pt]
+Ru=r\ \Rightarrow\ \hat u=\pinv{R}r\ \text{(min-norm, WZ)}\\[2pt]
+u=D\eps,\ \Sigma_u=DD\tp\ \Rightarrow\ \Theta_j=\Phi_jD\ \text{(identification)}
+\end{cases}
+\]
+Appendix~\ref{app:new} builds on these objects: it adds a distribution around
+$\hat u$ (bands), a noisy version of $Ru=r$ (soft conditions), extra rows (joint /
+partial-horizon scenarios), and a perturbation of a realised $\hat u$
+(counterfactuals).

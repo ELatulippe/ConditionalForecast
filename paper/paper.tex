@@ -1,0 +1,997 @@
+\documentclass[11pt]{article}
+
+%======================= Packages =======================
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{bm}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+\graphicspath{{../figures/}{figures/}}
+
+%======================= Math macros =======================
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\Fset}{\mathcal{F}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Id}{\mathbb{1}}
+\newcommand{\tp}{^{\prime}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\beps}{\bm{\varepsilon}}
+\newcommand{\Mmap}{\mathcal{M}}
+\newcommand{\Om}{\Omega}
+\newcommand{\pinv}[1]{#1^{+}}
+\DeclareMathOperator{\MSPE}{MSPE}
+\DeclareMathOperator{\RMSE}{RMSE}
+\DeclareMathOperator{\MAE}{MAE}
+\DeclareMathOperator{\CRPS}{CRPS}
+\DeclareMathOperator{\chol}{chol}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\diag}{diag}
+\DeclareMathOperator{\vecop}{vec}
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\newtheorem*{note}{Note}
+
+%---- figure helper: include the real PNG (resolved via \graphicspath: figures/ or ../figures/)
+\newcommand{\projfig}[3]{% {relpath}{caption}{label}
+  \begin{figure}[H]\centering
+  \includegraphics[width=0.86\linewidth]{#1}%
+  \caption{#2}\label{#3}
+  \end{figure}}
+
+\title{Conditional Forecasting with Uncertainty:\\
+Scenarios, Soft Conditions, and Historical Counterfactuals\\
+in a Monetary VAR\\[4pt]
+\large A methods-and-tooling companion}
+\author{%
+  Etienne Latulippe\\
+  \small Built on the Canadian monetary VAR of Moran, Stevanovic \& Surprenant (BoC SWP 2025-28)}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent Central-bank risk-scenario exercises are typically reported as point
+paths: ``if oil rises to \$120, inflation does this.'' The underlying
+Waggoner--Zha (WZ) conditional-forecast machinery, however, is fundamentally a
+statement about a \emph{distribution} of shocks consistent with a scenario, and
+it therefore carries its own measure of uncertainty that is almost never shown.
+This paper presents an operational toolkit that puts that uncertainty front and
+centre. Working in a reduced-form vector autoregression identified recursively,
+we (i) derive the conditional-forecast \emph{fan chart}, decomposing its width
+into a closed-form \emph{shock} (innovation) component and a simulated
+\emph{parameter} (estimation) component, and show that the constrained variable's
+band collapses to zero by construction; (ii) formalize \emph{soft} conditions,
+which condition on a distribution for the constrained variable rather than an
+exact path, so that the constrained variable itself acquires a band; (iii) treat
+\emph{joint} and \emph{partial-horizon} scenarios as nothing more than extra rows
+of one linear restriction; and (iv) derive \emph{historical counterfactuals} as a
+minimum-norm perturbation of realized history, optionally confined to a chosen
+structural shock. Each object is stated with the intuition and the exact algebra
+implemented in the accompanying code, with full derivations in the appendix. The
+toolkit is delivered as a reproducible offline pipeline and a self-contained
+interactive browser dashboard in which the impulse responses, scenario fan
+charts, and counterfactuals are recomputed live. The Canadian monetary VAR of
+Moran, Stevanovic \& Surprenant (2025) serves as the running validation case.
+\end{abstract}
+
+%=========================================================
+\section{Introduction}
+%=========================================================
+Scenario analysis is a staple of policy institutions: condition the model on a
+hypothetical path for one or more variables and read off what the rest of the
+economy does. The dominant technical device is the Waggoner--Zha (1999)
+conditional forecast, which finds the ``most likely'' sequence of future shocks
+consistent with the imposed path and propagates it to every variable. Moran,
+Stevanovic \& Surprenant (2025, hereafter MSS) apply exactly this device to a
+monthly vector autoregression (VAR) for the Canadian economy and report four risk
+scenarios. Those exercises, like most of their kind, report conditional
+\emph{means}. Yet Waggoner and Zha's original contribution is largely about the
+\emph{distribution} around those means. A scenario is produced by shocks, and the
+shocks it does not pin down remain random, so the conditional forecast of every
+unconstrained variable is itself a random object with a well-defined predictive
+distribution. Reporting only its mean discards precisely the information a risk
+exercise is meant to convey---how uncertain the consequences of the scenario are.
+
+This paper is a methods-and-tooling companion that makes conditional forecasting
+operational \emph{with} its uncertainty. Its central object is the
+conditional-forecast fan chart, whose width we derive and decompose into two
+additive sources: a \emph{shock} component---the innovations the constraint
+leaves free, available in closed form---and a \emph{parameter} component---the
+estimation uncertainty in the VAR, obtained by re-solving the scenario over
+posterior or bootstrap draws of the coefficients. A by-product of the derivation,
+visible in every figure below, is that the constrained variable's band collapses
+to a point by construction: a scenario pins what it pins with certainty and lets
+uncertainty accumulate only where the model is free to move. Around this core we
+develop the vocabulary a working risk desk actually needs. Soft conditions
+replace an exact path by a distribution---``oil around \$120, give or take''---so
+that the constrained variable, too, carries a band; joint and partial-horizon
+scenarios, which constrain several variables at once or a variable over only part
+of the horizon, turn out to be nothing more than adding or deleting rows of a
+single linear restriction; and historical counterfactuals---``what would
+inflation have done had the Bank tightened 100 basis points more?''---emerge as a
+minimum-norm perturbation of realized history, optionally confined to a single
+structural shock. Each object is stated with its intuition and the exact algebra
+implemented in the accompanying code, and derived in full in the appendices.
+
+The apparatus is delivered as software, and the delivery is part of the point.
+The estimation runs offline from a cached panel, so a result is deterministic and
+archivable, and it is guarded by a regression suite that checks the algebraic
+invariants any correct implementation must satisfy. A single self-contained
+browser dashboard then exposes the toolkit interactively: the impulse responses,
+the scenario fan charts with their live shock band, and the counterfactuals are
+all recomputed in the browser from the exported model objects, with no server and
+no re-run of the estimation. Throughout we take the estimated VAR and its
+recursive identification from MSS as given and validated; the reduced-form model,
+the baseline forecast, the conditional-forecast mean, and the variance
+decomposition are reproduced, for completeness, in Appendix~\ref{app:orig}, and
+the new derivations---the uncertainty decomposition, soft and joint conditions,
+and counterfactuals---are collected in Appendix~\ref{app:new}. The Canadian
+monetary VAR of MSS is the running example, and the figures are those produced by
+the pipeline and archived in the HTML report that accompanies the project.
+
+Notation is kept light. $y_t\in\R^{K}$ is the vector of endogenous variables, $p$
+the lag order, $H$ the horizon, and $\Fset_t=\{y_s\}_{s\le t}$ the information set.
+Reduced-form innovations $u_t$ have mean zero and covariance $\Sigma_u$; a
+structural impact matrix $D$ with $\Sigma_u=DD\tp$ maps them to orthonormal
+structural shocks through $u_t=D\eps_t$, $\E[\eps_t\eps_t\tp]=I_K$. Reduced-form
+moving-average coefficients are $\Phi_j=JA^jJ\tp$ (with $A$ the companion matrix
+and $J$ the top-block selector), structural ones $\Theta_j=\Phi_jD$, and
+$\pinv{R}=R\tp(RR\tp)^{-1}$ is the pseudoinverse of a full-row-rank $R$.
+
+%=========================================================
+\section{The model and conditional forecasts}\label{sec:model}
+%=========================================================
+We work with the reduced-form VAR
+\begin{equation}
+y_t=\nu+A_1y_{t-1}+\dots+A_py_{t-p}+u_t,
+\label{eq:var}
+\end{equation}
+written in companion form $Y_t=\mu+AY_{t-1}+U_t$ and iterated forward. Taking the
+conditional expectation kills every future shock, leaving the baseline
+(unconditional) forecast
+\begin{equation}
+\E[y_{t+h}\mid\Fset_t]=\Big(\textstyle\sum_{j=0}^{h-1}JA^{j}J\tp\Big)\nu+JA^{h}Y_t,
+\label{eq:baseline}
+\end{equation}
+while the deviation of any realized path from this baseline is driven entirely by
+future shocks,
+\begin{equation}
+y_{t+h}-\E[y_{t+h}\mid\Fset_t]=\sum_{j=0}^{h-1}\Phi_j\,u_{t+h-j}
+=\sum_{j=0}^{h-1}\Theta_j\,\eps_{t+h-j}.
+\label{eq:dev}
+\end{equation}
+These steps are standard and Appendix~\ref{app:orig} records them in full; the one
+object the rest of the paper needs is the stacked structural map. Collecting
+\eqref{eq:dev} for $h=1,\dots,H$ and writing
+$\beps=[\eps_{t+1}\tp,\dots,\eps_{t+H}\tp]\tp$ for the stack of future structural
+shocks, the deviation of the whole forecast path from the baseline is a single
+linear image of those shocks,
+\begin{equation}
+\Delta y=\Mmap\,\beps,
+\qquad
+\Mmap=\begin{bmatrix}
+\Theta_0 & & & \\
+\Theta_1 & \Theta_0 & & \\
+\vdots & & \ddots & \\
+\Theta_{H-1} & \Theta_{H-2} & \cdots & \Theta_0
+\end{bmatrix},
+\label{eq:Mmap}
+\end{equation}
+a block-lower-triangular $KH\times KH$ matrix with $\Theta_0=D$ on the diagonal.
+Everything below is a linear operation on \eqref{eq:Mmap}; working in the
+structural stack, where $\beps$ has identity covariance, is what keeps the
+uncertainty algebra of the next section clean.
+
+A scenario imposes target values on a subset of variables over some horizons.
+Each imposed cell is one linear equation in $\beps$, obtained by selecting the
+corresponding row of $\Mmap$, so a scenario is the linear restriction
+\begin{equation}
+R\,\beps=r,\qquad R=\Mmap_{[\text{constrained rows}],\,:},\quad
+r=\big(\text{target}-\text{baseline}\big)_{[\text{constrained rows}]},
+\label{eq:restriction}
+\end{equation}
+with $r\in\R^{m}$ collecting the $m$ constrained cells. Because a scenario fixes
+far fewer cells than there are free shocks, \eqref{eq:restriction} is
+underdetermined; Waggoner and Zha, after Doan, Litterman and Sims, select the
+minimum-norm solution
+\begin{equation}
+\hat\beps=\arg\min_{\beps}\tfrac12\beps\tp\beps \ \ \text{s.t.}\ \ R\beps=r
+=R\tp(RR\tp)^{-1}r=\pinv{R}\,r,
+\label{eq:wzsol}
+\end{equation}
+and the conditional forecast is $\Delta y=\Mmap\hat\beps$ added back to the
+baseline. Two points recur below. First, minimizing $\beps\tp\beps$ minimizes the
+sum of squared \emph{structural} shocks, which is the Mahalanobis norm
+$u\tp\Sigma_u^{-1}u$ of the reduced-form innovations and, under $\beps\sim
+N(0,I)$, picks out the mode of the shocks consistent with the scenario; minimizing
+the unweighted reduced-form norm instead would load implausibly large shocks, in
+standard-deviation terms, onto low-variance equations and distort every
+unconstrained path, so the distinction is substantive rather than cosmetic.
+Second, since $\E\lVert\beps\rVert^2=KH$, the ratio $\lVert\hat\beps\rVert/
+\sqrt{KH}$ is a readable gauge of how demanding a scenario is---near one for an
+ordinary draw, several times that for a scenario the model regards as close to
+impossible---and the dashboard reports it as a traffic light on every exercise.
+
+%=========================================================
+\section{Scenarios and their uncertainty}\label{sec:scen}\label{sec:unc}
+%=========================================================
+The restriction \eqref{eq:restriction} is agnostic about how a target path is
+chosen. In practice a scenario is described in economic terms and translated into
+the VAR's transformed units: a variable in levels (the unemployment or policy
+rate) is constrained directly, while a variable in log-differences (oil, prices,
+housing, employment, the exchange rate) has its authored \emph{level} path
+$\ell_{1:H}$ mapped by
+\begin{equation}
+\text{level variable: } r^{\text{unit}}_h=\ell_h,
+\qquad
+\text{log-diff variable: } r^{\text{unit}}_h=\log\ell_h-\log\ell_{h-1},
+\label{eq:units}
+\end{equation}
+with $\ell_0$ the last observed level. A small vocabulary of shapes---a
+\emph{ramp} to a target and hold, a flat \emph{hold}, a step--hold--ease
+\emph{policy} rate path, a \emph{replay} of a variable's own historical growth
+from a chosen date, and a \emph{pulse} that ramps, holds, and is then
+released---covers the common cases; the constructors are spelled out in
+Appendix~\ref{app:scenmap}.
+
+A scenario, however, is not a single line. The constraint fixes only $m$ linear
+combinations of the $KH$-dimensional shock vector and leaves the rest free, so the
+conditional forecast of every unconstrained variable has a genuine predictive
+distribution. Holding the parameters fixed, conditioning the prior $\beps\sim
+N(0,I)$ on $R\beps=r$ gives another Gaussian, supported on the constraint
+subspace,
+\begin{equation}
+\beps\mid R\beps=r\ \sim\ N(\hat\beps,\,P),\qquad
+\hat\beps=\pinv{R}r,\quad P=I-\pinv{R}R,
+\label{eq:shockpost}
+\end{equation}
+where $P$ is the orthogonal projector onto the null space of $R$; propagating
+through \eqref{eq:Mmap}, the conditional forecast is
+$\Delta y\sim N(\Mmap\hat\beps,\ \Mmap P\Mmap\tp)$,
+\begin{equation}
+\Var(\Delta y\mid R\beps=r)=\Mmap P\Mmap\tp.
+\label{eq:shockband}
+\end{equation}
+Because $RP=0$, the rows of $\Mmap P\Mmap\tp$ that belong to constrained cells
+vanish: the fan chart pinches to a point on the variable and horizons the scenario
+pins, and opens up only where the model is free. This \emph{shock} band is closed
+form---no simulation is needed---which is what lets the dashboard draw it live as
+the user edits a scenario. Since the display transforms are nonlinear (levels are
+reconstructed as $\ell_0\exp(\text{cumsum})$, growth rates as year-over-year
+differences), bands are read as sample quantiles of transformed draws from
+\eqref{eq:shockpost}, not as transforms of Gaussian quantiles;
+Appendix~\ref{app:shock} gives the argument.
+
+The estimated parameters carry their own uncertainty, and it cannot be bolted on
+afterward: the coefficients enter $R$, $r$, and $\Mmap$ themselves, so a different
+draw of the VAR implies a different constraint system and a different conditional
+mean, and the scenario must be re-solved inside each draw. Drawing from the
+normal--inverse--Wishart posterior when a shrinkage prior is used, or from a
+bias-adjusted residual bootstrap otherwise, and taking quantiles of the
+transformed conditional draws across parameter draws yields the \emph{parameter}
+band; combined with the shock band it gives the reported fan
+(Appendix~\ref{app:param}). One reading caveat is worth stating in the main text:
+the point baseline from the OLS estimate is not the centre of the bootstrap
+distribution, because the bias adjustment and the rejection of explosive draws
+shift the per-draw baseline, so the clean object for ``is this scenario
+distinguishable from the baseline?'' is the scenario-minus-baseline band computed
+draw by draw, which nets out the shift.
+
+Partial-horizon conditions come for free: leaving a horizon out of
+\eqref{eq:restriction} leaves it free, and the pulse type does exactly this,
+constraining a plateau and releasing everything after it. For a log-difference
+variable, pinning months $1,\dots,n$ pins the \emph{level} at month $n$ and lets
+the model supply the persistence, so ``oil spikes for six months and then
+normalizes'' becomes a statement the model completes rather than a plateau the
+analyst imposes. Figure~\ref{fig:temp} is such a released oil pulse. Over the six
+constrained months the effect is imposed, but the tail is the model's own answer:
+headline inflation climbs from about 2\% to a peak near 3.8\% in 2027 and then
+eases back toward 2.5\%, housing inflation recovers from mildly negative toward
+zero, and unemployment and the policy rate barely stir. The bands widen steadily,
+and by 2028 the 90\% interval for inflation runs from roughly zero to 5\%---a
+reminder that a six-month spike says little about the medium term with any
+confidence, which is exactly what a risk exercise should make visible.
+
+\projfig{temporary_shocks/figure5_bands_oil_spike_6_months.png}
+{A temporary (``pulse'') oil scenario: oil is constrained for six months and then
+released, so the tail is the model's own response. Green is history, red the
+scenario median, and the shaded bands the 68\% and 90\% intervals combining shock
+and parameter uncertainty.}
+{fig:temp}
+
+Constraining several variables at once merely adds rows to $R$ and $r$, so
+genuinely multivariate exercises are as cheap as univariate ones. This is what
+makes qualitatively new scenarios reachable: constraining oil up and unemployment
+up together forces the system onto a supply-shock path that neither constraint
+produces alone; holding activity down while the policy rate is fixed expresses a
+``recession with no policy response'' as a joint condition; and a tariff shock,
+which hits both foreign activity and the exchange rate, must constrain the two
+together, since constraining only one lets the model offset it through the other.
+Figure~\ref{fig:joint} shows the stagflation case. Unemployment is held at 8\%,
+visible as the flat median with essentially no band---the zero-width pinch of
+\eqref{eq:shockband} made concrete---while oil is pushed up; inflation rises
+briefly toward 3\% and then drifts below 2\% as the demand drag dominates, and the
+policy rate falls through the window with a wide band. The only quantity that
+moves against the analyst is feasibility: a joint condition is far more demanding
+than either leg, and $\lVert\hat\beps\rVert$ grows accordingly.
+
+\projfig{joint_scenarios/figure5_bands_stagflation.png}
+{A joint scenario (stagflation): oil and unemployment are constrained upward
+together. The unemployment panel shows the constrained path as a flat median with
+no band---the constrained variable's uncertainty is zero by construction---while
+the free variables fan out.}
+{fig:joint}
+
+A hard condition pins the constrained variable to an exact number, but ``oil
+around \$120'' is more honestly a distribution than a point. Writing the
+restriction as a noisy measurement $r=R\beps+e$ with $e\sim N(0,\Om)$,
+\begin{equation}
+r=R\beps+e,\qquad \Om=\diag(\bm\sigma^2),
+\label{eq:soft}
+\end{equation}
+and updating the prior in the usual Gaussian way gives the soft posterior
+\begin{equation}
+\beps\mid r\ \sim\ N\!\big(R\tp(RR\tp+\Om)^{-1}r,\ \ I-R\tp(RR\tp+\Om)^{-1}R\big),
+\label{eq:softpost}
+\end{equation}
+which returns the hard solution as $\Om\to0$ and otherwise gives the constrained
+variable a nondegenerate band of its own (Appendix~\ref{app:soft}). Softening the
+same oil pulse, Figure~\ref{fig:soft}, barely moves the medians of the reported
+variables and only modestly widens their near-term fans; the substantive change is
+on the constrained variable itself, whose pinned line becomes a band---the more
+truthful object for something labelled a risk scenario. Softness is set per
+horizon, so a path can be pinned tightly early and loosely later.
+
+\projfig{soft_conditions/figure5_bands_oil_spike_loosely_held.png}
+{A soft oil condition: conditioning on a distribution rather than an exact path.
+On the reported variables it is close to the hard pulse of
+Figure~\ref{fig:temp}; the difference is that the constrained variable itself now
+carries uncertainty.}
+{fig:soft}
+
+%=========================================================
+\section{Historical counterfactuals}\label{sec:cf}
+%=========================================================
+Nothing in the algebra confines it to the forecast horizon. Run the same
+machinery over a window the data actually realized and it answers historical
+``what if'' questions. Over such a window from an origin $t_0$, write the outcome
+as the origin baseline plus the realized innovations,
+$y_{\text{actual}}=F_{\text{base}}+\Mmap\beps_{\text{actual}}$, so that on the
+constrained rows $R\beps_{\text{actual}}=r_{\text{actual}}$ is the realized
+deviation from the baseline. A counterfactual imposes a different constrained path
+$r_{\text{cf}}$ while changing as little else as possible,
+\begin{equation}
+\min_{\delta}\ \lVert\delta\rVert\quad\text{s.t.}\quad
+R(\beps_{\text{actual}}+\delta)=r_{\text{cf}}
+\ \Longrightarrow\
+\delta=\pinv{R}\,(r_{\text{cf}}-r_{\text{actual}}),
+\label{eq:cf}
+\end{equation}
+so that
+\begin{equation}
+y_{\text{cf}}=y_{\text{actual}}+\Mmap\,\pinv{R}\,(r_{\text{cf}}-r_{\text{actual}}).
+\label{eq:cf2}
+\end{equation}
+The baseline cancels: the counterfactual is a perturbation of \emph{history}, not
+of a forecast, so it keeps every realized shock the constraint does not require
+changing. A pure policy experiment should move history only through the
+monetary-policy shock, which is imposed by restricting $\delta$ to the columns of
+$R$ carrying that shock before solving \eqref{eq:cf} (Appendix~\ref{app:cf}).
+Figure~\ref{fig:cf} runs precisely this exercise: had the Bank held the policy
+rate 100 basis points higher through 2022--23, the model puts the price level
+about 0.6 percentage points lower and the unemployment rate about 0.75 points
+higher by the end of the window---the shaded wedge between the actual and
+counterfactual paths---a disinflation bought with labour-market slack, and the
+expected sign. Because the change is confined to the policy shock, the 2022
+commodity and supply shocks remain in both paths and only the monetary leg
+differs. Two caveats travel with any such number. The reduced-form VAR is assumed
+invariant to the policy change contemplated, which is exactly what the Lucas
+critique denies, so the exercise is informative about the model's internal
+propagation, not about what the economy would truly have done; and the size of the
+required perturbation, $\lVert\delta\rVert/\sqrt{KH}$, gauges how far the
+counterfactual reaches beyond historical experience. Both are surfaced in the
+dashboard.
+
+\projfig{counterfactual/tighter_boc_price_unemp.png}
+{A historical counterfactual: the price level and unemployment over 2022--23 under
+a 100bp-tighter policy path (dashed) against the realized data (solid). The
+end-of-window gaps are annotated; the perturbation is confined to the policy
+shock.}
+{fig:cf}
+
+%=========================================================
+\section{Identification}\label{sec:ident}
+%=========================================================
+Everything above is conditional on an identification of the impact matrix $D$. We
+use the recursive scheme of the source paper, $D=\chol(\Sigma_u)$ lower
+triangular, which is a set of \emph{timing restrictions}: because $D$ is lower
+triangular, a shock ordered $k$ moves variables $1,\dots,k-1$ only with a lag and
+variables $k,\dots,K$ within the period. The ordering therefore encodes a
+contemporaneous causal chain, and the one used here---global and commodity
+variables first, then the domestic price block, then activity and the policy
+rate, with forward-looking financial variables last---reads as a set of economic
+priors: block exogeneity of a small open economy to world conditions within the
+month, prices that are sticky relative to the activity and policy block, and asset
+prices that respond to everything contemporaneously. These are assumptions of
+convenience as much as of theory; they are not tested by the data, and every
+object that is expressed in terms of \emph{named} structural shocks inherits them.
+
+It is worth being precise about which results depend on this choice, because it is
+less than one might expect. The Waggoner--Zha conditional forecast minimises the
+Mahalanobis norm $u\tp\Sigma_u^{-1}u$ of the reduced-form innovations, and both
+the reduced-form dynamics and $\Sigma_u$ are invariant to how one factors
+$\Sigma_u=DD\tp$. The scenario means of Section~\ref{sec:scen}, and the shock
+bands built from the conditional covariance, are therefore \emph{invariant} to the
+Cholesky ordering: permuting the recursive order, or indeed replacing the Cholesky
+factor by any other valid $D$, leaves every conditional forecast and every fan
+chart unchanged. What does depend on the identification is anything attributed to
+a particular structural shock: the impulse responses $\Theta_j=\Phi_jD$, the
+forecast-error variance decomposition, and---among the exercises developed
+here---the counterfactual that is \emph{confined to a chosen shock}, such as the
+tighter-policy experiment of Section~\ref{sec:cf}, whose confinement singles out
+the policy column of $D$. Identification thus matters exactly where a result is
+read as ``the effect of shock $\ell$,'' and is immaterial where a scenario is
+expressed purely as a path for observed variables.
+
+That distinction also bounds the cost of the recursive scheme's known weaknesses.
+Recursive timing restrictions are prone to the familiar puzzles---a
+contractionary monetary shock that appears to raise prices, or an activity
+response of the wrong sign---and the results can be sensitive to the ordering,
+which is hard to defend at the monthly frequency for variables that in truth
+respond to one another without delay. Because the identification is a single
+input, $D$, the toolkit is agnostic to how it is obtained, and a natural line of
+further work is to replace the Cholesky factor with an identification that rests
+on economics rather than timing. Several are under review: sign restrictions on
+the impulse responses, which set-identify the shocks from theory-consistent
+comovements (Uhlig, 2005; Rubio-Ram\'irez, Waggoner and Zha, 2010); external-
+instrument or proxy-SVAR identification, which uses an outside series correlated
+with a single structural shock---high-frequency policy surprises for the monetary
+shock, for instance (Mertens and Ravn, 2013; Gertler and Karadi, 2015; Stock and
+Watson, 2018); identification through heteroskedasticity, which exploits changes
+in the shock variances across regimes (Rigobon, 2003); and narrative restrictions
+that discipline the shocks with information about specific historical episodes
+(Antol\'in-D\'iaz and Rubio-Ram\'irez, 2018). Each of these delivers a different
+$D$ (or a set of admissible $D$'s), and each can be substituted into the pipeline
+without touching the scenario machinery: the impulse responses, the variance
+decomposition, and the shock-confined counterfactuals would update, while the
+scenario forecasts and their bands would not move at all.
+
+%=========================================================
+\section{Implementation and the dashboard}\label{sec:tooling}
+%=========================================================
+The methods are delivered as software, and the software is part of the
+contribution. The estimation runs from a cached panel with no network access, so a
+run is deterministic and archivable, and a one-time online step freezes the data
+into that cache. A regression suite checks the data-independent invariants any
+correct refactor must preserve---that $\Sigma_u$ is symmetric positive definite,
+that $DD\tp$ recovers it, that the impact response equals $D$, that
+forecast-error-variance shares sum to one, that hard conditioning hits its
+constraint to numerical zero, and that a counterfactual with
+$r_{\text{cf}}=r_{\text{actual}}$ reproduces history exactly---alongside a
+golden-value snapshot that catches numerical drift. A report generator collects
+every figure and the variance-decomposition table into a single self-contained
+HTML file.
+
+The interactive dashboard is a single self-contained HTML page that does all of
+its computation in the browser from the exported model objects: the structural
+responses $\Theta_j$, the impact matrix $D$, the baseline, the companion matrix,
+and the transformed history. An impulse-response explorer rescales and recumulates
+responses on the fly; a scenario builder lets the user assemble hard or soft,
+single or joint, full or partial-horizon constraints and watch the conditional
+forecast---and, on demand, the closed-form shock band of
+Section~\ref{sec:scen}---recompute as the inputs change, with the in-browser
+Waggoner--Zha solve validated against the reference implementation to about
+$10^{-8}$; a counterfactual tab implements \eqref{eq:cf2} with the
+structural-shock confinement and the feasibility and Lucas-critique readouts; and
+a grouped gallery holds the archived fan charts. Because the browser recomputes
+from exported matrices rather than re-estimating, the parameter-uncertainty band
+remains an offline object; exporting a set of posterior draws to make the full
+band live is a natural next step.
+
+%=========================================================
+\section{Evaluation and outlook}\label{sec:oos}
+%=========================================================
+The apparatus is internally coherent and reproducible, and the figures behave as
+the theory says they should---the constrained variable pinches, the free variables
+fan out, soft conditions widen the constrained variable's own band, and the
+counterfactual signs are the expected ones. What remains is to show that the
+conditional forecasts are also \emph{good}. The natural test is a pseudo-real-time
+evaluation: re-estimate on an expanding window and score the forecasts against
+realized data, both by point-forecast loss relative to an autoregressive benchmark
+and by a proper density score computed from predictive quantiles, which would also
+tell us whether the fan-chart widths are calibrated. The evaluation framework---the
+benchmark, the error definitions, and the quantile representation of the continuous
+ranked probability score---is standard and is recorded in Appendix~\ref{app:orig};
+the backtesting harness that would populate it is the principal item of future
+work, and it reuses the same conditional-forecast solve developed here inside a
+date loop.
+
+To conclude, conditional forecasting is usually presented as a point exercise, but
+the method is a statement about a distribution of shocks and therefore carries its
+own uncertainty. Making that uncertainty the object of interest---a fan chart with
+a closed-form shock component and a simulated parameter component, soft conditions
+that give the constrained variable a band, joint and partial-horizon scenarios as
+row operations on one restriction, and historical counterfactuals as minimum-norm
+perturbations of history---turns a familiar tool into a more honest one, and the
+interactive delivery puts it in the hands of anyone with a browser. The remaining
+gap is empirical validation of the forecasts themselves, which the planned
+out-of-sample evaluation is designed to fill.
+
+%=========================================================
+\appendix
+\newpage
+%=========================================================
+\section{Foundations}\label{app:orig}
+%=========================================================
+This appendix derives, from the reduced-form VAR, the objects that the new results
+of Appendix~\ref{app:new} take as given: the companion form and forward recursion,
+the baseline forecast, the moving-average coefficients and their stacked form
+$\Mmap$, the Waggoner--Zha minimum-norm solution $\hat u=\pinv{R}r$, and the
+structural identification $u=D\eps$. Rather than reproduce the source paper's
+results wholesale, we keep only what the extensions build on, and each subsection
+closes with a pointer (\emph{Used in:}) to where it is used downstream. The source
+paper's variance decomposition and out-of-sample metrics are recorded at the end
+(\S\ref{app:refresults}) for reference; they are not prerequisites for the new
+results. The structural-space restriction used in the main text, $R\beps=r$ with
+stacked map $\Mmap$, is the reduced-form restriction here under $u=D\eps$
+(\S\ref{app:norm}); the standalone \texttt{derivation\_companion.tex} carries the
+same material in the source paper's own numbering and prose.
+
+\medskip
+%======================================================================
+% Appendix A -- Foundations. Written to be \input by paper.tex (its \section
+% header and intro live there). These are the derivations the NEW results of
+% Appendix B take as given; each subsection ends with a pointer to where it is
+% used. The source paper's variance decomposition and OOS metrics are recorded
+% at the end for reference (they are not prerequisites for the new results).
+%======================================================================
+
+\subsection{Reduced form and companion form}\label{app:redcomp}
+The starting point is the reduced-form VAR
+\begin{equation}
+y_t=\nu+A_1y_{t-1}+A_2y_{t-2}+\cdots+A_py_{t-p}+u_t,
+\qquad \E[u_t]=0,\ \ \E[u_tu_t\tp]=\Sigma_u,
+\tag{1}\label{aeq:red}
+\end{equation}
+a $K$-dimensional linear autoregression of order $p$. ``Reduced form'' means
+$u_t$ collects statistical innovations with \emph{no} economic interpretation;
+the $A_i$ summarise own- and cross-dynamics. Because every equation shares the
+same right-hand-side regressors, the seemingly-unrelated-regression system
+collapses to equation-by-equation OLS.
+
+\paragraph{Companion (state-space) form.} Stacking the current and $p-1$ most
+recent vectors turns \eqref{aeq:red} into a first-order system,
+\begin{equation}
+Y_t=\mu+AY_{t-1}+U_t,
+\tag{2}\label{aeq:comp}
+\end{equation}
+with
+\[
+Y_t=\begin{bmatrix} y_t\\ y_{t-1}\\ \vdots\\ y_{t-p+1}\end{bmatrix},\quad
+\mu=\begin{bmatrix}\nu\\0\\\vdots\\0\end{bmatrix},\quad
+U_t=\begin{bmatrix}u_t\\0\\\vdots\\0\end{bmatrix},\quad
+A=\begin{bmatrix}
+A_1 & A_2 & \cdots & A_{p-1} & A_p\\
+I_K & 0 & \cdots & 0 & 0\\
+0 & I_K & \cdots & 0 & 0\\
+\vdots & & \ddots & & \vdots\\
+0 & 0 & \cdots & I_K & 0
+\end{bmatrix}.
+\]
+Reading \eqref{aeq:comp} block-row by block-row: the first block row is exactly
+\eqref{aeq:red}; block row $i\ge2$ is the identity $y_{t-i+1}=y_{t-i+1}$, which
+merely carries lags forward in the state. With the top-block selector
+$J=[\,I_K\ 0\ \cdots\ 0\,]\in\R^{K\times Kp}$ one has the identities used
+repeatedly below,
+\begin{equation}
+y_t=JY_t,\qquad \mu=J\tp\nu,\qquad U_t=J\tp u_t.
+\tag{$\star$}\label{aeq:star}
+\end{equation}
+Covariance-stationarity requires all eigenvalues of $A$ to lie inside the unit
+circle.
+
+\medskip
+\noindent\textit{Used in:} everything below; the companion matrix $A$ is exported
+to the dashboard so the counterfactual baseline (\S\ref{app:cf}) can be iterated
+in the browser from any in-sample origin.
+
+\subsection{Forward iteration: the \texorpdfstring{$h$}{h}-step recursion}\label{app:recursion}
+Iterating \eqref{aeq:comp} forward $h$ periods gives
+\begin{equation}
+Y_{t+h}=\Bigg(\sum_{j=0}^{h-1}A^{j}\Bigg)\mu+A^{h}Y_t+\sum_{j=0}^{h-1}A^{j}U_{t+h-j}.
+\tag{3}\label{aeq:recursion}
+\end{equation}
+
+\paragraph{Derivation (induction on $h$).} The base case $h=1$ is
+\eqref{aeq:comp}. Assuming \eqref{aeq:recursion} at horizon $h$ and applying
+\eqref{aeq:comp} once more, $Y_{t+h+1}=\mu+AY_{t+h}+U_{t+h+1}$, substitution gives
+\[
+Y_{t+h+1}
+=\underbrace{\mu+\sum_{j=0}^{h-1}A^{j+1}\mu}_{=\sum_{j=0}^{h}A^{j}\mu}
++A^{h+1}Y_t
++\underbrace{\sum_{j=0}^{h-1}A^{j+1}U_{t+h-j}+U_{t+h+1}}_{=\sum_{j=0}^{h}A^{j}U_{t+h+1-j}},
+\]
+where the last bracket re-indexes $j\mapsto j+1$ (turning the sum into
+$\sum_{j=1}^{h}A^{j}U_{t+h+1-j}$) and the stray $U_{t+h+1}$ supplies the missing
+$j=0$ term. This is \eqref{aeq:recursion} at $h+1$.
+
+\medskip
+\noindent\textit{Used in:} the baseline (\S\ref{app:base}) is its conditional
+mean; the moving-average map (\S\ref{app:ma}) is its stochastic part.
+
+\subsection{The baseline forecast}\label{app:base}
+Taking $\E[\,\cdot\mid\Fset_t]$ of \eqref{aeq:recursion} annihilates every future
+shock, since $U_{t+h-j}$ is dated $t+h-j\ge t+1$ for $j=0,\dots,h-1$ and hence
+unforecastable, $\E[U_{t+h-j}\mid\Fset_t]=0$. Premultiplying by $J$ and using
+$\mu=J\tp\nu$ from \eqref{aeq:star},
+\begin{equation}
+\E[y_{t+h}\mid\Fset_t]
+=\Bigg(\sum_{j=0}^{h-1}JA^{j}J\tp\Bigg)\nu+JA^{h}Y_t.
+\tag{4}\label{aeq:base}
+\end{equation}
+Under quadratic loss this conditional expectation is the optimal point forecast;
+it is the \emph{baseline scenario} against which every conditional forecast and
+every counterfactual is measured.
+
+\medskip
+\noindent\textit{Used in:} the constraint right-hand side
+$r=(\text{target}-\text{baseline})$ of the main text~\eqref{eq:restriction} and the counterfactual
+origin baseline $F_{\text{base}}$ (\S\ref{app:cf}).
+
+\subsection{Forecast error, impulse responses, and the stacked map}\label{app:ma}
+Subtracting \eqref{aeq:base} from \eqref{aeq:recursion} leaves only the shock
+term; projecting onto the top block with $U_{t+h-j}=J\tp u_{t+h-j}$ gives the
+deviation of any realised path from the baseline,
+\begin{equation}
+y_{t+h}-\E[y_{t+h}\mid\Fset_t]
+=\sum_{j=0}^{h-1}JA^{j}J\tp\,u_{t+h-j}
+=\sum_{j=0}^{h-1}\Phi_j\,u_{t+h-j},
+\qquad \Phi_j:=JA^{j}J\tp.
+\tag{5}\label{aeq:dev}
+\end{equation}
+The $\Phi_j$ are the reduced-form moving-average (impulse-response) coefficients,
+with $\Phi_0=I_K$. \textbf{Economic reading:} forcing a variable onto a scenario
+path (left-hand side $\neq0$) is \emph{equivalent} to imposing a particular
+realisation of future innovations (right-hand side); the scenario cannot happen
+``for free,'' and the same innovations move every other variable through $\Phi_j$.
+
+\paragraph{The stacked map.} Collect \eqref{aeq:dev} for $h=1,\dots,H$. Writing
+$\Delta y=[\,(y_{t+1}-\E)\tp,\dots,(y_{t+H}-\E)\tp\,]\tp\in\R^{KH}$ and stacking
+the innovations conformably, the deviation is a single linear image of the future
+shocks,
+\begin{equation}
+\Delta y=\Mmap_u\,u,\qquad
+\Mmap_u=\begin{bmatrix}
+\Phi_0 & & &\\
+\Phi_1 & \Phi_0 & &\\
+\vdots & & \ddots &\\
+\Phi_{H-1} & \Phi_{H-2} & \cdots & \Phi_0
+\end{bmatrix},
+\tag{5$'$}\label{aeq:stack}
+\end{equation}
+a block-lower-triangular $KH\times KH$ matrix (block $(h,s)=\Phi_{h-s}$ for
+$s\le h$, zero otherwise). Once a structural impact matrix $D$ is identified
+(\S\ref{app:ident2}), the same construction with $\Theta_j:=\Phi_jD$ in place of
+$\Phi_j$ gives the \emph{structural} stacked map $\Mmap$ of the main text
+\eqref{eq:Mmap}, whose diagonal block is $\Theta_0=D$.
+
+\medskip
+\noindent\textit{Used in:} $\Mmap$ is \emph{the} object of the paper. The
+restriction rows $R$ are selected rows of $\Mmap$; the propagation
+$\Delta y=\Mmap\beps$ delivers every conditional forecast, band
+(\S\ref{app:shock}, \S\ref{app:param}), and counterfactual (\S\ref{app:cf}). The
+coefficients $\Theta_j$ are exported to the dashboard, which rebuilds $\Mmap$ in
+the browser.
+
+\subsection{The conditioning restriction and the minimum-norm shock path}\label{app:minnorm}
+A scenario fixes target values for a subset of variables over some horizons.
+Reading the corresponding rows off \eqref{aeq:stack} yields a linear system in the
+stacked future innovations,
+\begin{equation}
+R\,u=r,
+\tag{5$''$}\label{aeq:Rur}
+\end{equation}
+where $r\in\R^{m}$ is the gap between the scenario values and the baseline
+forecasts on the $m$ constrained cells and $R\in\R^{m\times KH}$ collects the
+associated rows of the MA coefficients. Because a scenario fixes far fewer cells
+than there are free shocks ($m<KH$), \eqref{aeq:Rur} is underdetermined; WZ, after
+Doan--Litterman--Sims, select the minimum-norm solution.
+
+\paragraph{Derivation (constrained minimisation).} Solve
+$\min_u\tfrac12u\tp u$ s.t.\ $Ru=r$. The Lagrangian
+$\mathcal L=\tfrac12u\tp u+\lambda\tp(r-Ru)$ has first-order conditions
+$u=R\tp\lambda$ and $Ru=r$; substituting, $RR\tp\lambda=r$, so
+$\lambda=(RR\tp)^{-1}r$ (full row rank $m$) and
+\begin{equation}
+\hat u=R\tp(RR\tp)^{-1}r=\pinv{R}\,r.
+\tag{5$'''$}\label{aeq:minnorm}
+\end{equation}
+Adding $\hat u$ back through \eqref{aeq:stack} delivers the conditional forecast
+for every variable.
+
+\begin{remark}[dimensions of the inverse]
+With $R$ of size $m\times KH$ and $m<KH$, $RR\tp$ ($m\times m$) is invertible
+while $R\tp R$ ($KH\times KH$) is singular. A source-paper display that writes
+$\hat u=R\tp(R\tp R)^{-1}r$ should read $(RR\tp)^{-1}$ as in \eqref{aeq:minnorm};
+the two coincide only under the transposed storage convention for $R$. The
+substance is unchanged.
+\end{remark}
+
+\begin{remark}[``most likely'' shocks]
+If $u\sim N(0,I_{KH})$ then \eqref{aeq:minnorm} is the mode (equivalently the mean)
+of $u\mid Ru=r$: minimising $u\tp u$ maximises the Gaussian density. This is why
+$\hat u$ is the most likely combination of shocks consistent with the scenario ---
+the reading the uncertainty derivations of Appendix~\ref{app:new} make precise.
+\end{remark}
+
+\medskip
+\noindent\textit{Used in:} \eqref{aeq:minnorm} is the object every new derivation
+extends --- soft conditioning replaces $(RR\tp)^{-1}$ by $(RR\tp+\Om)^{-1}$
+(\S\ref{app:soft}); the shock band conditions the Gaussian around $\hat\beps$
+(\S\ref{app:shock}); the counterfactual perturbs a realised $\hat u$
+(\S\ref{app:cf}). The structural-space version $\hat\beps=\pinv{R}r$ used in the
+main text is \eqref{aeq:minnorm} with $u=D\eps$ (\S\ref{app:norm}).
+
+\subsection{Structural identification}\label{app:ident2}
+The reduced-form innovation is decomposed as $u_t=D\eps_t$ with orthonormal
+structural shocks,
+\begin{equation}
+\E[\eps_t]=0,\quad \E[\eps_t\eps_t\tp]=I_K
+\ \Longrightarrow\ \Sigma_u=DD\tp.
+\tag{6}\label{aeq:struct}
+\end{equation}
+
+\paragraph{Order condition and Cholesky.} A symmetric $\Sigma_u$ has $K(K+1)/2$
+distinct entries while $D$ has $K^2$; the equations $\Sigma_u=DD\tp$ fall short by
+$K^2-K(K+1)/2=K(K-1)/2$ restrictions. Requiring $D$ lower-triangular zeros out
+exactly its $K(K-1)/2$ upper entries, closing the gap, and with a positive
+diagonal the solution is the unique Cholesky factor
+$D=\chol(\hat\Sigma_u)$, with $\hat\Sigma_u=\sum_t\hat u_t\hat u_t\tp/(T-Kp-1)$. A
+lower-triangular $D$ means shock $k$ moves variables $1,\dots,k-1$ only with a
+lag but $k,\dots,K$ contemporaneously, so the recursive ordering of $y_t$ is
+material (global variables first, sticky prices ahead of the activity/policy
+block, forward-looking financial variables last). The structural impulse
+responses are $\Theta_j=\Phi_jD$.
+
+\medskip
+\noindent\textit{Used in:} $D=\Theta_0$ is the diagonal block of $\Mmap$ and the
+change of variables $u=D\eps$ that turns the WZ norm into the Mahalanobis norm
+(\S\ref{app:norm}); the whole apparatus is identification-agnostic --- replace
+the Cholesky $D$ by a sign-restricted or instrument-based $D$ and every formula in
+Appendix~\ref{app:new} is unchanged.
+
+\subsection{Reference: variance decomposition and out-of-sample metrics}\label{app:refresults}
+The following source-paper results are recorded for completeness; they are
+\emph{not} prerequisites for the new derivations of Appendix~\ref{app:new}.
+
+\paragraph{Forecast-error variance decomposition.} With the structural forecast
+error $y_{t+h}-\E y_{t+h}=\sum_{j=0}^{h-1}\Theta_j\eps_{t+h-j}$ and orthonormal
+$\eps$, the mean squared prediction error and its per-shock split are
+\begin{equation}
+\MSPE(h)=\sum_{j=0}^{h-1}\Theta_j\Theta_j\tp,\qquad
+\MSPE_{k,l}(h)=\sum_{j=0}^{h-1}\theta_{k,l,j}^2,
+\tag{7$'$,\,7$''$}\label{aeq:fevd}
+\end{equation}
+where $\theta_{k,l,j}=[\Theta_j]_{kl}$; the reported share is
+$\MSPE_{k,l}(h)/\sum_{l}\MSPE_{k,l}(h)$, and orthogonality is what makes the shares
+sum to one across $l$.
+
+\paragraph{Out-of-sample evaluation (planned exercise).} Point accuracy uses an
+AR($p$) benchmark --- \eqref{aeq:red} with diagonal $A_i$ --- and $h$-step errors
+$e^{(h,m)}_{k,t}$ aggregated into
+\begin{equation}
+\RMSE(k,h,m)=\sqrt{\tfrac{1}{\bar t-\underline t}\textstyle\sum_t\big(e^{(h,m)}_{k,t}\big)^2},
+\qquad
+\MAE(k,h,m)=\tfrac{1}{\bar t-\underline t}\textstyle\sum_t\big|e^{(h,m)}_{k,t}\big|,
+\tag{9,\,10}\label{aeq:rmse}
+\end{equation}
+each reported relative to the benchmark (a ratio below one favours the VAR).
+Density accuracy uses the continuous ranked probability score in its quantile
+(``pinball'') form: with $\rho_\tau(u)=u(\tau-\Id(u<0))$ and predictive quantiles
+$\hat q^{(h,m)}_{\tau,k,t}$ on a grid $\tau_1<\cdots<\tau_N$,
+\begin{equation}
+\CRPS(k,h,m)=\frac{2}{N-1}\sum_{n=1}^{N}
+\Bigg(\frac{1}{\bar t-\underline t}\sum_{t}\rho_{\tau_n}\!\big(y_{k,t}-\hat q^{(h,m)}_{\tau_n,k,t}\big)\Bigg),
+\tag{11}\label{aeq:crps}
+\end{equation}
+the trapezoidal discretisation of
+$\CRPS(F,y)=2\int_0^1\rho_\tau(y-F^{-1}(\tau))\,d\tau$, which needs only the
+predictive quantiles, not the full density. These metrics drive the planned
+backtesting harness (\S\ref{sec:oos}).
+
+\subsection*{Summary of the foundation chain}
+\[
+\underbrace{(1)\Rightarrow(2)}_{\text{companion}}
+\ \Rightarrow\
+\underbrace{(3)}_{\text{iterate}}
+\ \Rightarrow\
+\begin{cases}
+\E[\cdot\mid\Fset_t]\ \Rightarrow\ (4)\ \text{baseline}\\[2pt]
+\text{deviation}\ \Rightarrow\ (5),(5')\ \Rightarrow\ \Mmap\ \text{(stacked map)}\\[2pt]
+Ru=r\ \Rightarrow\ \hat u=\pinv{R}r\ \text{(min-norm, WZ)}\\[2pt]
+u=D\eps,\ \Sigma_u=DD\tp\ \Rightarrow\ \Theta_j=\Phi_jD\ \text{(identification)}
+\end{cases}
+\]
+Appendix~\ref{app:new} builds on these objects: it adds a distribution around
+$\hat u$ (bands), a noisy version of $Ru=r$ (soft conditions), extra rows (joint /
+partial-horizon scenarios), and a perturbation of a realised $\hat u$
+(counterfactuals).
+
+%=========================================================
+\section{New derivations}\label{app:new}
+%=========================================================
+
+\subsection{Structural versus reduced-form norm}\label{app:norm}
+Reduced-form innovations satisfy $u=D\eps$, stacked as
+$\Delta y=\Mmap_u u=\Mmap\beps$ with $\Mmap_u$ the reduced-form stacked map (blocks
+$\Phi_j$) and $\Mmap$ its structural counterpart (blocks $\Theta_j=\Phi_jD$). The
+reduced-form restriction $R_u u=r$ and the structural one $R\beps=r$ have
+$R=R_uD_{\text{blk}}$, $u=D_{\text{blk}}\beps$, where $D_{\text{blk}}=I_H\otimes D$.
+Minimizing $\beps\tp\beps$ subject to $R\beps=r$ is minimizing
+$u\tp D_{\text{blk}}^{-\top}D_{\text{blk}}^{-1}u=u\tp(I_H\otimes\Sigma_u^{-1})u$,
+the Mahalanobis norm. Under $\beps\sim N(0,I)$ the density is
+$\propto\exp(-\tfrac12\beps\tp\beps)$, so \eqref{eq:wzsol} is the mode of
+$\beps\mid R\beps=r$, justifying ``most likely shocks.'' The two norms differ in
+every unconstrained variable; the structural (Mahalanobis) norm is the correct one.
+
+\subsection{The scenario-to-units map}\label{app:scenmap}
+Let $\ell_0$ be the last observed level of the variable and $x_0$ its value. The
+constructors used to author a path (all in \emph{level} space, then mapped by
+\eqref{eq:units}) are:
+\begin{itemize}[nosep,leftmargin=1.4em]
+\item \emph{ramp} to $\bar\ell$ over $n$ months:
+$\ell_h=x_0+(\bar\ell-x_0)\min(h/n,1)$;
+\item \emph{hold} at $a$: $\ell_h=a$ for all $h$;
+\item \emph{pulse} to $\bar\ell$ over $n$, hold $k$: the ramp-hold on
+$h\le n{+}k$, and $\ell_h=\text{NaN}$ (free) for $h>n{+}k$;
+\item \emph{policy}: $r_h$ steps up by $s$ each month to a peak $\bar r$, holds
+$k$ months, then eases by $s$ to a floor $\underline r$ (a level-variable path);
+\item \emph{replay} from date $\tau$ for $n$ months: copy the variable's own
+realized growth (for a log-diff variable) or level (for a level variable) starting
+just after $\tau$, then free.
+\end{itemize}
+A \emph{window} $[h_1,h_2]$ sets $r^{\text{unit}}_h=\text{NaN}$ outside the window;
+NaN cells contribute no row to \eqref{eq:restriction}. For a log-difference
+variable, note the asymmetry: constraining months $1,\dots,n$ pins the level at
+month $n$, whereas a window that does not start at $h=1$ constrains growth rates
+without pinning the level they build on.
+
+\subsection{Joint and partial-horizon constraints}\label{app:joint}
+For $M$ constrained variables with per-variable, per-horizon targets, the row set
+of \eqref{eq:restriction} is
+\[
+\{\,(h,v): \text{target}(v,h)\ \text{is not NaN}\,\},\qquad
+\text{row}(h,v)=(h-1)K+v,
+\]
+so $R$ is $\Mmap$ restricted to those rows and $r$ the corresponding
+target-minus-baseline entries. Nothing else changes: the solve \eqref{eq:wzsol},
+the soft update \eqref{eq:softpost}, and the bands \eqref{eq:shockpost} all take
+this $R$ as input. Duplicated (variable, horizon) cells are disallowed (a variable
+cannot be constrained twice at the same horizon).
+
+\subsection{Soft conditioning (Gaussian update)}\label{app:soft}
+Take the prior $\beps\sim N(0,I_{KH})$ and the noisy measurement
+\eqref{eq:soft}, $r=R\beps+e$, $e\sim N(0,\Om)$, $e\perp\beps$. The joint law is
+Gaussian with
+\[
+\Cov(\beps,r)=R\tp,\qquad \Var(r)=RR\tp+\Om,\qquad \E[\beps]=0,\ \E[r]=0.
+\]
+The standard Gaussian conditioning formula
+$\E[\beps\mid r]=\Cov(\beps,r)\Var(r)^{-1}r$ and
+$\Var[\beps\mid r]=\Var(\beps)-\Cov(\beps,r)\Var(r)^{-1}\Cov(r,\beps)$ give
+\eqref{eq:softpost}:
+\[
+\hat\beps_{\text{soft}}=R\tp(RR\tp+\Om)^{-1}r,\qquad
+P_{\text{soft}}=I-R\tp(RR\tp+\Om)^{-1}R.
+\]
+As $\Om\to0$, $R\tp(RR\tp)^{-1}=\pinv{R}$ and $P_{\text{soft}}\to I-\pinv{R}R=P$,
+the hard-condition projector. A posterior draw is generated without forming
+$P_{\text{soft}}$: with $z\sim N(0,I)$ and $e\sim N(0,\Om)$,
+\[
+\beps^{\text{draw}}=\hat\beps_{\text{soft}}+\big(z-R\tp(RR\tp+\Om)^{-1}(Rz+e)\big),
+\]
+whose mean is $\hat\beps_{\text{soft}}$ and whose covariance is exactly
+$P_{\text{soft}}$; $\Om=0$ collapses it to the hard projector draw of
+\S\ref{app:shock}.
+
+\subsection{Shock-uncertainty band}\label{app:shock}
+Condition $\beps\sim N(0,I)$ on $R\beps=r$ (hard). Decompose $\beps$ into its
+component in $\mathrm{row}(R)$ and its component in $\ker R$. The row-space
+component is fixed by the constraint at $\pinv{R}r$; the kernel component is
+unconstrained and retains its prior law. Hence
+$\beps\mid R\beps=r\sim N(\hat\beps,P)$ with $\hat\beps=\pinv{R}r$ and
+$P=I-\pinv{R}R$ the orthogonal projector onto $\ker R$ (idempotent, symmetric,
+$RP=0$). A draw is $\hat\beps+Pz=\hat\beps+(z-\pinv{R}(Rz))$, applied through the
+shared factors of $R$ so $P$ is never formed. Propagating,
+$\Delta y=\Mmap\beps\sim N(\Mmap\hat\beps,\Mmap P\Mmap\tp)$, which is
+\eqref{eq:shockband}. Since $RP=0$, the constrained rows of $\Mmap P\Mmap\tp$
+vanish and the constrained cells have zero predictive variance---the pinch in the
+fan chart. Because the display transform (level reconstruction $\ell_0\exp(\sum)$,
+year-over-year growth) is nonlinear, bands are read as sample quantiles of the
+transformed draws, not as transforms of the Gaussian quantiles.
+
+\subsection{Parameter-uncertainty band}\label{app:param}
+Let $\{(A^{(d)},\Sigma_u^{(d)})\}_{d=1}^{N}$ be draws of the VAR parameters.
+For each: form $D^{(d)}=\chol(\Sigma_u^{(d)})$, the structural map $\Mmap^{(d)}$
+(blocks $\Theta_j^{(d)}=\Phi_j^{(d)}D^{(d)}$), the baseline $F^{(d)}_{\text{base}}$,
+then rebuild $R^{(d)},r^{(d)}$ and solve $\hat\beps^{(d)}=(R^{(d)})^{+}r^{(d)}$.
+The per-draw conditional \emph{mean} is
+$F^{(d)}_{\text{base}}+\Mmap^{(d)}\hat\beps^{(d)}$ and a full predictive draw adds
+a shock draw $\Mmap^{(d)}(z-\text{proj})$ from \S\ref{app:shock} at draw $d$'s
+parameters. Reported quantities are quantiles, across $d$, of the transformed
+conditional draws (\emph{cond}); of the baseline draws (\emph{base}); and of the
+scenario-minus-baseline means $\Mmap^{(d)}\hat\beps^{(d)}$ (\emph{diff}), which
+isolate parameter uncertainty because with parameters fixed the difference is
+deterministic.
+
+\paragraph{Draw mechanism.} With a Minnesota prior, draws are from the
+normal--inverse--Wishart posterior (rejecting explosive companions); otherwise a
+residual bootstrap regenerates a sample and re-estimates. For the bootstrap, the
+data-generating companion is bias-adjusted following Kilian (1998): estimate the
+mean bias by a first bootstrap pass, subtract it, and shrink the adjustment toward
+zero until the companion is nonexplosive; residuals are resampled only from months
+not activated by an impulse dummy (whose residuals are zero by construction), so
+those months are not smuggled back in. Explosive draws in the main pass are
+redrawn. The OLS baseline is \emph{not} the bootstrap median (the bias adjustment
+and rejection shift the per-draw baseline), which is why the \emph{diff} object,
+computed draw by draw, is the correct basis for ``distinguishable from baseline.''
+
+\subsection{Historical counterfactual}\label{app:cf}
+Fix an origin $t_0$ within the sample and a window of length $H$. The realized
+data over the window equal the origin baseline plus the realized structural
+innovations, $y_{\text{actual}}=F_{\text{base}}+\Mmap\beps_{\text{actual}}$, so on
+the constrained rows $R\beps_{\text{actual}}=r_{\text{actual}}$ with
+$r_{\text{actual}}=(y_{\text{actual}}-F_{\text{base}})_{[\text{rows}]}$. Impose a
+counterfactual target $r_{\text{cf}}$ on those rows and keep every other realized
+shock by minimizing the change:
+\[
+\min_{\delta}\lVert\delta\rVert\ \text{ s.t. }\ R(\beps_{\text{actual}}+\delta)=r_{\text{cf}}
+\ \Rightarrow\ R\delta=r_{\text{cf}}-r_{\text{actual}}
+\ \Rightarrow\ \delta=\pinv{R}(r_{\text{cf}}-r_{\text{actual}}),
+\]
+by the same Lagrangian argument as \eqref{eq:wzsol}. Then
+$y_{\text{cf}}=y_{\text{actual}}+\Mmap\delta$, i.e.\ \eqref{eq:cf2}; the baseline
+cancels because it is common to actual and counterfactual. To confine the change
+to a subset $S$ of structural shocks, restrict $\delta$ to the columns of $R$
+indexed by $S$ across horizons, $R_S=R_{:,[S]}$, solve
+$\delta_S=\pinv{(R_S)}(r_{\text{cf}}-r_{\text{actual}})$, and embed $\delta_S$ back
+into a zero vector. The reported perturbation size is
+$\lVert\delta\rVert/\sqrt{KH}$; a rank-deficient $R_S$ (an infeasible confined
+target) is handled by the pseudoinverse, which projects the shortfall away. The
+reduced-form VAR is held fixed throughout---the Lucas-critique assumption that
+bounds the interpretation.
+
+
+%=========================================================
+\begin{thebibliography}{9}
+\bibitem{bm2017} Blake, A.\ and Mumtaz, H.\ (2017). \emph{Applied Bayesian
+Econometrics for Central Bankers}. Bank of England, CCBS Technical Handbook.
+\bibitem{dls1984} Doan, T., Litterman, R.\ and Sims, C.\ (1984). Forecasting and
+conditional projection using realistic prior distributions. \emph{Econometric
+Reviews} 3, 1--100.
+\bibitem{kilian1998} Kilian, L.\ (1998). Small-sample confidence intervals for
+impulse response functions. \emph{Review of Economics and Statistics} 80, 218--230.
+\bibitem{mss2025} Moran, K., Stevanovic, D.\ and Surprenant, S.\ (2025). Risk
+Scenarios and Macroeconomic Forecasts. Bank of Canada Staff Working Paper 2025-28.
+\bibitem{wz1999} Waggoner, D.\ and Zha, T.\ (1999). Conditional forecasts in
+dynamic multivariate models. \emph{Review of Economics and Statistics} 81, 639--651.
+\bibitem{adrr2018} Antol\'in-D\'iaz, J.\ and Rubio-Ram\'irez, J.\ (2018). Narrative sign restrictions for SVARs. \emph{American Economic Review} 108, 2802--2829.
+\bibitem{gk2015} Gertler, M.\ and Karadi, P.\ (2015). Monetary policy surprises, credit costs, and economic activity. \emph{American Economic Journal: Macroeconomics} 7, 44--76.
+\bibitem{mr2013} Mertens, K.\ and Ravn, M.\ (2013). The dynamic effects of personal and corporate income tax changes in the United States. \emph{American Economic Review} 103, 1212--1247.
+\bibitem{rigobon2003} Rigobon, R.\ (2003). Identification through heteroskedasticity. \emph{Review of Economics and Statistics} 85, 777--792.
+\bibitem{rwz2010} Rubio-Ram\'irez, J., Waggoner, D.\ and Zha, T.\ (2010). Structural vector autoregressions: theory of identification and algorithms for inference. \emph{Review of Economic Studies} 77, 665--696.
+\bibitem{sw2018} Stock, J.\ and Watson, M.\ (2018). Identification and estimation of dynamic causal effects in macroeconomics using external instruments. \emph{Economic Journal} 128, 917--948.
+\bibitem{uhlig2005} Uhlig, H.\ (2005). What are the effects of monetary policy on output? Results from an agnostic identification procedure. \emph{Journal of Monetary Economics} 52, 381--419.
+\end{thebibliography}
+
+\end{document}

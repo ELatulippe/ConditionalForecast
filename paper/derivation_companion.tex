@@ -1,0 +1,440 @@
+\documentclass[11pt]{article}
+
+%======================= Packages =======================
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{bm}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue}
+
+%======================= Math macros =======================
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Fset}{\mathcal{F}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Id}{\mathbb{1}}
+\newcommand{\tp}{^{\prime}}
+\DeclareMathOperator{\MSPE}{MSPE}
+\DeclareMathOperator{\RMSE}{RMSE}
+\DeclareMathOperator{\MAE}{MAE}
+\DeclareMathOperator{\CRPS}{CRPS}
+\DeclareMathOperator{\vecop}{vec}
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\newtheorem*{note}{Note}
+
+\title{Derivation Companion to\\
+\emph{``Risk Scenarios and Macroeconomic Forecasts''}\\
+\normalsize (Moran, Stevanovic \& Surprenant, BoC SWP 2025-28)}
+\author{Equation-by-equation notes and derivations}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent This note reproduces every numbered equation of the paper, states the
+assumptions under which it holds, and supplies the intermediate algebra that the
+paper compresses. Numbering follows the paper: Eqs.~(1)--(5) build the
+reduced-form VAR and the Waggoner--Zha (WZ) conditional forecast; Eq.~(6) and the
+variance decomposition build the Baumeister--Kilian (BK) structural forecast; the
+appendix equations (7)--(11) define the out-of-sample evaluation metrics. Three
+places where the published display appears to contain a typo are flagged in
+remarks.
+\end{abstract}
+
+\tableofcontents
+\bigskip
+
+%=========================================================
+\section{Notation and conventions}
+%=========================================================
+Throughout, $y_t\in\R^{K}$ is the vector of $K$ endogenous variables, $p$ is the
+lag order, and $H$ the maximum forecast horizon. The information set at time $t$
+is $\Fset_t=\{y_s\}_{s=1}^{t}$. Innovations are (reduced-form) white noise:
+\[
+\E[u_t]=0,\qquad \E[u_tu_t\tp]=\Sigma_u,\qquad \E[u_tu_s\tp]=0\ \ (t\neq s).
+\]
+The companion objects are $Y_t\in\R^{Kp}$, $\mu\in\R^{Kp}$, $U_t\in\R^{Kp}$, and
+the companion matrix $A\in\R^{Kp\times Kp}$. The selection matrix
+\[
+J:=\begin{bmatrix} I_K & 0_K & \cdots & 0_K\end{bmatrix}\in\R^{K\times Kp}
+\]
+extracts the top block, so that the following identities hold and are used
+repeatedly:
+\begin{equation}
+y_t = J Y_t,\qquad \mu = J\tp\nu,\qquad U_t = J\tp u_t. \tag{$\star$}\label{eq:star}
+\end{equation}
+The reduced-form moving-average (impulse-response) coefficients are
+$\Phi_j:=JA^jJ\tp$, and — once a structural impact matrix $D$ is identified — the
+structural impulse responses are $\Theta_j:=\Phi_j D=JA^jJ\tp D$.
+
+%=========================================================
+\section{The reduced-form VAR and its companion form (Eqs.~1--2)}
+%=========================================================
+\subsection*{Eq.~(1): reduced form}
+\begin{equation}
+y_t = \nu + A_1 y_{t-1} + A_2 y_{t-2} + \cdots + A_p y_{t-p} + u_t. \tag{1}
+\end{equation}
+This is a $K$-dimensional linear autoregression of order $p$. ``Reduced form''
+means $u_t$ collects statistical innovations with \emph{no} economic
+interpretation; the $A_i$ summarize both own- and cross-dynamics. Estimation is
+equation-by-equation OLS, which is efficient here because every equation has the
+same right-hand-side regressors (the seemingly-unrelated-regression system
+collapses to OLS).
+
+\subsection*{Eq.~(2): companion (state-space) form}
+\begin{equation}
+Y_t = \mu + A Y_{t-1} + U_t. \tag{2}
+\end{equation}
+
+\paragraph{Derivation.} Stack the current and $p-1$ most recent vectors,
+\[
+Y_t:=\begin{bmatrix} y_t\\ y_{t-1}\\ \vdots\\ y_{t-p+1}\end{bmatrix},\qquad
+\mu:=\begin{bmatrix} \nu\\ 0\\ \vdots\\ 0\end{bmatrix},\qquad
+U_t:=\begin{bmatrix} u_t\\ 0\\ \vdots\\ 0\end{bmatrix},
+\]
+\[
+A:=\begin{bmatrix}
+A_1 & A_2 & \cdots & A_{p-1} & A_p\\
+I_K & 0_K & \cdots & 0_K & 0_K\\
+0_K & I_K & \cdots & 0_K & 0_K\\
+\vdots & & \ddots & & \vdots\\
+0_K & 0_K & \cdots & I_K & 0_K
+\end{bmatrix}.
+\]
+Reading Eq.~(2) block-row by block-row: the \emph{first} block row is
+$y_t=\nu+A_1y_{t-1}+\cdots+A_py_{t-p}+u_t$, i.e.\ Eq.~(1); block row $i\ge 2$ is
+the trivial identity $y_{t-i+1}=y_{t-i+1}$, which merely carries lags forward in
+the state. Hence (2) is exactly (1) written as a first-order system. The
+eigenvalues of $A$ govern stability: covariance-stationarity requires all
+eigenvalues to lie inside the unit circle.
+
+%=========================================================
+\section{Iterating forward: the $h$-step recursion (Eq.~3)}
+%=========================================================
+\begin{equation}
+Y_{t+h}=\Bigg(\sum_{j=0}^{h-1}A^{j}\Bigg)\mu + A^{h}Y_t
++ \sum_{j=0}^{h-1}A^{j}U_{t+h-j}. \tag{3}
+\end{equation}
+
+\paragraph{Derivation (induction on $h$).}
+\emph{Base case} $h=1$ is Eq.~(2) shifted forward:
+$Y_{t+1}=\mu+AY_t+U_{t+1}$, which matches (3) since
+$\sum_{j=0}^{0}A^{j}\mu=\mu$, $A^{1}Y_t=AY_t$, and
+$\sum_{j=0}^{0}A^{j}U_{t+1-j}=U_{t+1}$.
+
+\emph{Inductive step.} Assume (3) holds at horizon $h$. Apply (2) once more,
+$Y_{t+h+1}=\mu+AY_{t+h}+U_{t+h+1}$, and substitute the inductive hypothesis:
+\begin{align*}
+Y_{t+h+1}
+&=\mu+A\Bigg[\sum_{j=0}^{h-1}A^{j}\mu+A^{h}Y_t+\sum_{j=0}^{h-1}A^{j}U_{t+h-j}\Bigg]
++U_{t+h+1}\\[2pt]
+&=\underbrace{\mu+\sum_{j=0}^{h-1}A^{j+1}\mu}_{=\sum_{j=0}^{h}A^{j}\mu}
++A^{h+1}Y_t
++\underbrace{\sum_{j=0}^{h-1}A^{j+1}U_{t+h-j}+U_{t+h+1}}_{=\sum_{j=0}^{h}A^{j}U_{t+h+1-j}}\\[2pt]
+&=\sum_{j=0}^{h}A^{j}\mu+A^{h+1}Y_t+\sum_{j=0}^{h}A^{j}U_{t+h+1-j},
+\end{align*}
+which is (3) at horizon $h+1$. In the last shock sum, re-indexing
+$j\mapsto j+1$ turns $\sum_{j=0}^{h-1}A^{j+1}U_{t+h-j}$ into
+$\sum_{j=1}^{h}A^{j}U_{t+h+1-j}$, and the stray $U_{t+h+1}$ supplies the missing
+$j=0$ term. 
+
+%=========================================================
+\section{Baseline forecast (Eq.~4)}
+%=========================================================
+\begin{equation}
+\E\!\left[y_{t+h}\mid\Fset_t\right]
+=\Bigg(\sum_{j=0}^{h-1}JA^{j}J\tp\Bigg)\nu + JA^{h}Y_t. \tag{4}
+\end{equation}
+
+\paragraph{Derivation.} Take $\E[\,\cdot\mid\Fset_t]$ of the companion recursion
+(3). Every shock in the last term is dated $t+h-j\ge t+1$ for $j=0,\dots,h-1$,
+hence is unforecastable: $\E[U_{t+h-j}\mid\Fset_t]=0$. Therefore
+\[
+\E[Y_{t+h}\mid\Fset_t]=\Bigg(\sum_{j=0}^{h-1}A^{j}\Bigg)\mu + A^{h}Y_t .
+\]
+Premultiply by $J$ to recover the top block $y_{t+h}=JY_{t+h}$, and use
+$\mu=J\tp\nu$ from~\eqref{eq:star}:
+\[
+\E[y_{t+h}\mid\Fset_t]
+=\Bigg(\sum_{j=0}^{h-1}JA^{j}\Bigg)J\tp\nu + JA^{h}Y_t
+=\Bigg(\sum_{j=0}^{h-1}JA^{j}J\tp\Bigg)\nu + JA^{h}Y_t.
+\]
+Under quadratic (MSE) loss this conditional expectation is the optimal point
+forecast; it is the \emph{baseline scenario}.
+
+%=========================================================
+\section{WZ conditional forecasts (Eq.~5 and the restriction $Ru=r$)}
+%=========================================================
+\subsection*{Eq.~(5): deviation of the path from the baseline}
+\begin{equation}
+y_{t+h}-\E\!\left[y_{t+h}\mid\Fset_t\right]
+=\sum_{j=0}^{h-1}JA^{j}J\tp\,u_{t+h-j}
+=\sum_{j=0}^{h-1}\Phi_j\,u_{t+h-j}. \tag{5}
+\end{equation}
+
+\paragraph{Derivation.} Subtract the conditional mean $\E[Y_{t+h}\mid\Fset_t]$
+(the deterministic part of (3)) from (3) itself; only the shock term survives:
+\[
+Y_{t+h}-\E[Y_{t+h}\mid\Fset_t]=\sum_{j=0}^{h-1}A^{j}U_{t+h-j}.
+\]
+Premultiply by $J$ and use $U_{t+h-j}=J\tp u_{t+h-j}$ from~\eqref{eq:star}:
+\[
+y_{t+h}-\E[y_{t+h}\mid\Fset_t]
+=\sum_{j=0}^{h-1}JA^{j}J\tp u_{t+h-j}
+=\sum_{j=0}^{h-1}\Phi_j u_{t+h-j}. 
+\]
+\textbf{Economic reading.} Forcing a variable onto a scenario path (LHS
+$\neq 0$) is \emph{equivalent} to imposing a particular realization of future
+innovations (RHS). The scenario cannot happen ``for free''; it must be produced
+by shocks, and those same shocks move every other variable through $\Phi_j$.
+
+\subsection*{The stacked restriction $Ru=r$}
+Stacking (5) over the constrained variables and horizons $h=1,\dots,H$ yields a
+linear system in the future innovations. Let $M$ ($0<M<K$) be the number of
+constrained variables. Following Blake--Mumtaz (2017),
+\begin{equation}
+Ru=r,\tag{5$'$}
+\end{equation}
+where:
+\begin{itemize}[nosep]
+\item $u:=\big[u_{1,t+1},\dots,u_{K,t+1},\ \dots,\ u_{1,t+H},\dots,u_{K,t+H}\big]\tp
+\in\R^{KH}$ stacks all future innovations;
+\item $r\in\R^{MH}$ is the LHS of (5) — the gap between the scenario values and
+the baseline forecasts for the $M$ constrained variables over $H$ periods;
+\item $R\in\R^{MH\times KH}$ collects the relevant rows of the MA coefficients
+$\Phi_h$, i.e.\ the RHS map in (5).
+\end{itemize}
+Both $R$ and $r$ are known once the VAR is estimated.
+
+\subsection*{The minimum-norm shock path (Doan--Litterman--Sims)}
+Because $M<K$, system (5$'$) is \emph{underdetermined}: many shock sequences
+reproduce the scenario. The paper selects the least-squares (minimum-norm)
+solution.
+
+\paragraph{Derivation (constrained minimization).} Solve
+\[
+\min_{u}\ \tfrac12\,u\tp u \quad\text{s.t.}\quad Ru=r.
+\]
+The Lagrangian is $\mathcal L=\tfrac12 u\tp u+\lambda\tp(r-Ru)$. The first-order
+conditions are
+\[
+\partial_u\mathcal L=u-R\tp\lambda=0 \ \Rightarrow\ u=R\tp\lambda,
+\qquad Ru=r.
+\]
+Substituting, $RR\tp\lambda=r$, so $\lambda=(RR\tp)^{-1}r$ (using that $R$ has
+full row rank $MH$), and therefore
+\begin{equation}
+\hat u = R\tp(RR\tp)^{-1}r. \tag{5$''$}\label{eq:wzsol}
+\end{equation}
+Adding $\hat u$ back through (5) delivers the WZ conditional forecast for every
+variable. 
+
+\begin{remark}[dimensions of the inverse]
+With $R$ of size $MH\times KH$ and $MH<KH$, the object $RR\tp$ is
+$MH\times MH$ and invertible, whereas $R\tp R$ is $KH\times KH$ and
+\emph{singular}. The paper's display writes $\hat u=R\tp(R\tp R)^{-1}r$; for the
+stated dimensions this should read $(RR\tp)^{-1}$ as in~\eqref{eq:wzsol}. The two
+orderings coincide only if one adopts the transposed convention for $R$ (i.e.\
+storing $R$ as $KH\times MH$), in which case the roles of $RR\tp$ and $R\tp R$
+swap. The substance is unchanged.
+\end{remark}
+
+\begin{remark}[``most likely'' shocks]
+If innovations are standardized Gaussian, $u\sim N(0,I_{KH})$, then~\eqref{eq:wzsol}
+is precisely the \emph{mode} (equivalently the mean) of the conditional
+distribution of $u$ given $Ru=r$. Minimizing $u\tp u$ maximizes the Gaussian
+density, which is why $\hat u$ is described as the most likely combination of
+shocks consistent with the scenario.
+\end{remark}
+
+%=========================================================
+\section{BK structural conditional forecasts (Eq.~6)}
+%=========================================================
+\subsection*{Eq.~(6): structural form}
+\begin{equation}
+y_t=\nu+A_1y_{t-1}+\cdots+A_py_{t-p}+D\epsilon_t. \tag{6}
+\end{equation}
+Here the reduced-form innovation is decomposed as $u_t=D\epsilon_t$, with
+structural shocks that are white noise \emph{and mutually orthogonal},
+normalized to unit variance:
+\[
+\E[\epsilon_t]=0,\qquad \E[\epsilon_t\epsilon_t\tp]=I_K
+\ \Rightarrow\ \Sigma_u=\E[u_tu_t\tp]=D\,\E[\epsilon_t\epsilon_t\tp]\,D\tp=DD\tp.
+\]
+
+\subsection*{The BK forecast decomposition}
+BK conditions on a path of \emph{structural shocks}
+$\{\epsilon^{\text{scen}}_{t+h-j}\}$ rather than on variable values:
+\begin{multline}
+\E\!\left[y_{t+h}\,\Big|\,\{\epsilon_{t+h-j}=\epsilon^{\text{scen}}_{t+h-j}\}_{j=0}^{h-1},\Fset_t\right]
+=\E\!\left[y_{t+h}\mid\Fset_t\right]
++\sum_{j=0}^{h-1}\Theta_j\,\epsilon^{\text{scen}}_{t+h-j}. \tag{6$'$}
+\end{multline}
+
+\paragraph{Derivation.} Start from the stochastic part of (3),
+$\sum_{j=0}^{h-1}A^{j}U_{t+h-j}$, and project onto the top block as in (5):
+\[
+\sum_{j=0}^{h-1}A^{j}U_{t+h-j}
+\ \xrightarrow{\ J\,\cdot\ }\
+\sum_{j=0}^{h-1}JA^{j}J\tp u_{t+h-j}
+=\sum_{j=0}^{h-1}JA^{j}J\tp D\,\epsilon_{t+h-j}
+=\sum_{j=0}^{h-1}\Theta_j\,\epsilon_{t+h-j},
+\]
+using $u_t=D\epsilon_t$ and defining $\Theta_j:=JA^{j}J\tp D=\Phi_jD$ — the
+matrix of structural impulse responses at horizon $j$. In the baseline these
+future shocks average to zero; the scenario instead \emph{sets} them to
+$\epsilon^{\text{scen}}$, and the induced deviation from the baseline is exactly
+$\sum_{j}\Theta_j\epsilon^{\text{scen}}_{t+h-j}$, giving (6$'$).
+
+\subsection*{Identification of $D$ via Cholesky}
+\paragraph{Order condition (counting).} A symmetric $\Sigma_u$ has
+$K(K+1)/2$ distinct entries, but $D$ has $K^2$ free entries. The identifying
+equations $\Sigma_u=DD\tp$ therefore fall short by
+\[
+K^2-\tfrac{K(K+1)}{2}=\tfrac{K(K-1)}{2}
+\]
+restrictions. Imposing that $D$ be \emph{lower triangular} zeros out exactly its
+$K(K-1)/2$ upper-triangular entries, which just closes the gap. With a positive
+diagonal, the solution is the unique Cholesky factor $D=\mathrm{chol}(\hat\Sigma_u)$,
+where $\hat\Sigma_u=\sum_{t}\hat u_t\hat u_t\tp/(T-Kp-1)$.
+
+\paragraph{Timing.} A lower-triangular $D$ means that shock
+$k$ affects variables $1,\dots,k-1$ only with a lag, but variables
+$k,\dots,K$ contemporaneously. The recursive (causal) ordering of $y_t$ is
+therefore material. The paper's ordering
+\[
+\text{oil}\to\text{US IP}\to\text{CPI}\to\text{housing}\to\text{unemp.}\to\text{disc.\ rate}\to\text{FX}
+\]
+places global variables first (small-open-economy block exogeneity), sticky
+prices ahead of the activity/policy block, and the forward-looking exchange rate
+last.
+
+%=========================================================
+\section{Forecast-error variance decomposition (Section 2.4)}
+%=========================================================
+\subsection*{The mean squared prediction error}
+\begin{equation}
+\MSPE(h)=\E\big[(y_{t+h}-\E y_{t+h})(y_{t+h}-\E y_{t+h})\tp\big]
+=\sum_{j=0}^{h-1}\Theta_j\Theta_j\tp. \tag{7$'$}
+\end{equation}
+
+\paragraph{Derivation.} By (6$'$) the structural forecast error is
+$y_{t+h}-\E y_{t+h}=\sum_{j=0}^{h-1}\Theta_j\epsilon_{t+h-j}$. Then
+\[
+\MSPE(h)=\E\!\left[\Big(\sum_{j=0}^{h-1}\Theta_j\epsilon_{t+h-j}\Big)
+\Big(\sum_{i=0}^{h-1}\Theta_i\epsilon_{t+h-i}\Big)\tp\right]
+=\sum_{j=0}^{h-1}\sum_{i=0}^{h-1}\Theta_j\,\E[\epsilon_{t+h-j}\epsilon_{t+h-i}\tp]\,\Theta_i\tp.
+\]
+Because the structural shocks are serially uncorrelated with identity
+contemporaneous covariance, $\E[\epsilon_{t+h-j}\epsilon_{t+h-i}\tp]=I_K\,\delta_{ij}$
+(Kronecker delta\footnote{The Kronecker delta $\delta_{ij}$ equals $1$ when $i=j$ and $0$ when $i\neq j$; multiplying by it keeps only the matched ($i=j$) terms and annihilates every cross term, collapsing the double sum to a single one.}), so all cross terms $i\neq j$ vanish and
+$\MSPE(h)=\sum_{j=0}^{h-1}\Theta_j\Theta_j\tp$. 
+
+\subsection*{Per-shock contributions and the relative decomposition}
+Let $\theta_{k,l,j}$ be the $(k,l)$ entry of $\Theta_j$: the response of variable
+$k$ to structural shock $l$ at horizon $j$. The $(k,k)$ diagonal of (7$'$) is
+\[
+\big[\MSPE(h)\big]_{kk}
+=\sum_{j=0}^{h-1}\big[\Theta_j\Theta_j\tp\big]_{kk}
+=\sum_{j=0}^{h-1}\sum_{l=1}^{K}\theta_{k,l,j}^{2}.
+\]
+Isolating a single shock $l$ gives its cumulative contribution to variable $k$,
+\begin{equation}
+\MSPE_{k,l}(h)=\theta_{k,l,0}^2+\theta_{k,l,1}^2+\cdots+\theta_{k,l,h-1}^2,
+\qquad
+\MSPE_{k}(h)=\sum_{l=1}^{K}\MSPE_{k,l}(h). \tag{7$''$}
+\end{equation}
+The reported \emph{relative} decomposition (Table~1) is the ratio
+$\MSPE_{k,l}(h)/\MSPE_{k}(h)$ — the share of the $h$-step forecast-error variance
+of variable $k$ attributable to shock $l$. Orthogonality of the $\epsilon$'s is
+what makes these shares sum to one across $l$.
+
+%=========================================================
+\section{Appendix B: out-of-sample evaluation (Eqs.~7--11)}
+%=========================================================
+\subsection*{Eq.~(7): the AR benchmark}
+\begin{equation}
+y_{k,t}=\nu_k+a_1y_{k,t-1}+\cdots+a_py_{k,t-p}+u_{k,t}. \tag{7}
+\end{equation}
+This is (1) restricted to \emph{diagonal} coefficient matrices $A_1,\dots,A_p$:
+each variable is forecast from its own lags only. It admits the same companion
+form (2) and the same forecast formula (4), so it is a nested special case used
+as the accuracy yardstick.
+
+\subsection*{Eqs.~(8)--(10): point-forecast errors}
+Define the trailing $h$-period average
+$y^{(h)}_{k,t}:=\tfrac1h\sum_{j=1}^{h}y_{k,t-j+1}$. The $h$-step forecast error of
+model $m$ is the realized-minus-predicted average,
+\begin{equation}
+e^{(h,m)}_{k,t}
+=\frac1h\sum_{j=1}^{h}y^{(h)}_{k,t-j+1}
+-\frac1h\sum_{j=1}^{h}\hat y^{(h,m)}_{k,t}, \tag{8}
+\end{equation}
+aggregated over the evaluation window $t=\underline t,\dots,\bar t$ into
+\begin{align}
+\RMSE(k,h,m)&=\sqrt{\frac{1}{\bar t-\underline t}\sum_{t=\underline t}^{\bar t}
+\big(e^{(h,m)}_{k,t}\big)^2}, \tag{9}\\[2pt]
+\MAE(k,h,m)&=\frac{1}{\bar t-\underline t}\sum_{t=\underline t}^{\bar t}
+\big|e^{(h,m)}_{k,t}\big|. \tag{10}
+\end{align}
+The paper reports each of these \emph{relative} to the AR benchmark, so a value
+$<1$ favors the VAR. RMSE penalizes large errors quadratically; MAE is robust to
+outliers.
+
+\subsection*{Eq.~(11): density forecasts via the CRPS}
+Density forecasts are obtained by simulation: draw
+$u_{t+h}\sim N(0,\hat\Sigma_u)$, iterate (1) forward $h=1,\dots,24$, and repeat
+$5000$ times to build a predictive distribution at each horizon. These are scored
+with the continuous ranked probability score. Let $\hat q^{(h,m)}_{\tau,k,t}$ be
+the predictive $\tau$-quantile and let the quantile (``pinball'') loss be
+\[
+\rho_\tau(u):=u\big(\tau-\Id(u<0)\big).
+\]
+On a grid $0\le\tau_1<\cdots<\tau_N\le 1$,
+\begin{equation}
+\CRPS(k,h,m)=\frac{2}{N-1}\sum_{n=1}^{N}
+\left(\frac{1}{\bar t-\underline t}\sum_{t=\underline t}^{\bar t}
+\rho_{\tau_n}\!\big(y_{k,t}-\hat q^{(h,m)}_{\tau_n,k,t}\big)\right). \tag{11}
+\end{equation}
+
+\paragraph{Why this is a discretized CRPS.} For a predictive CDF $F$ and outcome
+$y$, the CRPS admits the equivalent quantile representation
+\[
+\CRPS(F,y)=\int_{-\infty}^{\infty}\!\big(F(z)-\Id\{y\le z\}\big)^2\,dz
+=2\int_0^1\rho_\tau\!\big(y-F^{-1}(\tau)\big)\,d\tau .
+\]
+Equation (11) replaces the integral $2\int_0^1(\cdot)\,d\tau$ by the trapezoidal
+average $\tfrac{2}{N-1}\sum_n(\cdot)$ over the quantile grid, and the inner term
+by the sample mean pinball loss over the evaluation window. This is the practical
+appeal noted in the paper: only the predictive quantiles are needed, not the full
+density. As with RMSE/MAE, ratios below one favor the VAR.
+
+\begin{remark}[indicator in the pinball loss]
+The proper pinball loss uses $\Id(u<0)$ (whether the realization falls below the
+predicted quantile). The published display writes $\Id(u<\tau)$; the standard and
+strictly-proper form is $\rho_\tau(u)=u(\tau-\Id(u<0))$, used above.
+\end{remark}
+
+%=========================================================
+\section*{Summary of the logical chain}
+\addcontentsline{toc}{section}{Summary of the logical chain}
+\[
+\underbrace{(1)\Rightarrow(2)}_{\text{companion}}
+\ \Rightarrow\
+\underbrace{(3)}_{\text{iterate}}
+\ \Rightarrow\
+\begin{cases}
+\E[\cdot\mid\Fset_t]\ \Rightarrow\ (4)\ \text{baseline}\\[2pt]
+\text{deviation}\ \Rightarrow\ (5)\ \Rightarrow\ Ru=r\ \Rightarrow\ \hat u=R\tp(RR\tp)^{-1}r\ \text{(WZ)}\\[2pt]
+u=D\epsilon\ \Rightarrow\ (6),(6')\ \text{with}\ \Theta_j=\Phi_jD\ \text{(BK)}\\[2pt]
+\Theta_j\Theta_j\tp\ \Rightarrow\ \text{variance decomposition (Table 1)}
+\end{cases}
+\]
+Every scenario result in the paper is a projection of one master object — the
+recursion (3) — either onto imposed variable values (WZ) or imposed structural
+shocks (BK).
+
+\end{document}

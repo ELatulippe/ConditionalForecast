@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canadian VAR — Interactive Dashboard</title>
+<style>
+  :root{ --bg:#fff; --panel:#f7f8fa; --ink:#1a1d21; --muted:#5b6570; --line:#d7dce2;
+         --accent:#0072B2; --base:#8a94a0; --scen:#0072B2; --act:#333; --cf:#c0392b; }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI",Roboto,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+  header{padding:16px 22px;border-bottom:1px solid var(--line)}
+  header h1{margin:0;font-size:19px} header .sub{color:var(--muted);font-size:13px;margin-top:3px}
+  .tabs{display:flex;gap:6px;padding:10px 22px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .tab{padding:8px 14px;border:1px solid var(--line);border-bottom:none;border-radius:8px 8px 0 0;
+       background:var(--panel);cursor:pointer;font-size:14px;color:var(--muted)}
+  .tab.active{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 -2px 0 var(--accent) inset}
+  main{padding:18px 22px}
+  .layout{display:grid;grid-template-columns:300px 1fr;gap:22px}
+  .controls{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .controls h3{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .ctl{margin-bottom:15px} .ctl label{display:block;font-size:13px;margin-bottom:5px;font-weight:600}
+  select,input[type=range],input[type=number]{width:100%}
+  input[type=number]{padding:3px 5px;border:1px solid var(--line);border-radius:6px}
+  .row{display:flex;align-items:center;gap:8px} .row>*{flex:1}
+  .readout{font-size:12px;color:var(--muted);margin-top:4px}
+  .checks{max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff}
+  .checks label{font-weight:400;font-size:13px;display:flex;align-items:center;gap:6px;margin:2px 0}
+  .toggle{display:flex;align-items:center;gap:8px;font-weight:400;font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
+  .card{border:1px solid var(--line);border-radius:10px;padding:8px 8px 4px;background:#fff}
+  .card h4{margin:2px 6px 4px;font-size:13px} .card .unit{font-weight:400;color:var(--muted);font-size:11px}
+  .hint{color:var(--muted);font-size:12px;margin:2px 0 14px}
+  button{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px}
+  .part{border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;background:#fff}
+  .part .phead{display:flex;gap:6px;align-items:center;margin-bottom:6px} .part .phead select{flex:1}
+  .part .params{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .part .params label{font-size:11px;color:var(--muted);font-weight:600;display:block}
+  .feas{border-radius:8px;padding:8px 10px;font-size:12.5px;margin:2px 0 12px}
+  .feas.ok{background:#eef7f0;border:1px solid #bfe3c8}
+  .feas.warn{background:#fdf3e7;border:1px solid #f2d6a8}
+  .feas.bad{background:#fbecec;border:1px solid #efc2c2}
+  .scenwrap{display:grid;grid-template-columns:260px 1fr;gap:22px}
+  .scenlist{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px}
+  .scenlist button{display:block;width:100%;text-align:left;margin:4px 0}
+  .scenlist button.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,114,178,.15)}
+  .scenview{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:#fff}
+  .scenview img{max-width:100%;height:auto;display:block;margin:6px auto 0}
+  .scenview h3{margin:4px 0 2px;font-size:16px}
+  .scendesc{font-size:13.5px;color:#444;margin:0 0 8px;line-height:1.4}
+  .scengroup{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin:12px 4px 4px}
+  .scengroup:first-child{margin-top:2px}
+  .badge{display:inline-block;background:#eef4f9;color:#0a5a86;border-radius:999px;padding:1px 9px;font-size:11px}
+  .legend{font-size:12px;color:var(--muted);margin:0 0 8px}
+  .swatch{display:inline-block;width:22px;height:0;border-top-width:3px;border-top-style:solid;vertical-align:middle;margin-right:4px}
+  footer{padding:14px 22px;color:var(--muted);font-size:12px;border-top:1px solid var(--line)}
+  .empty{color:var(--muted);font-size:14px;padding:30px}
+  #selftest{font-family:monospace;font-size:12px;white-space:pre;padding:6px 22px;color:#333}
+</style>
+</head>
+<body>
+<header>
+  <h1>Canadian VAR — Interactive Dashboard</h1>
+  <div class="sub" id="sub">Conditional-forecast (Waggoner–Zha) replication</div>
+</header>
+<div class="tabs">
+  <div class="tab active" data-tab="scenb">Scenario builder (live)</div>
+  <div class="tab" data-tab="scen">Scenario gallery</div>
+  <div class="tab" data-tab="cf">Counterfactuals (live)</div>
+  <div class="tab" data-tab="irf">Impulse-response explorer</div>
+</div>
+<main>
+  <!-- IRF -->
+  <section id="tab-irf" style="display:none"><div class="layout">
+    <div class="controls">
+      <h3>Shock</h3>
+      <div class="ctl"><label for="shock">Structural shock to</label><select id="shock"></select>
+        <div class="readout">Recursive (Cholesky) identification; ordering as estimated.</div></div>
+      <div class="ctl"><label for="size">Shock size (× SD)</label>
+        <input type="range" id="size" min="0.25" max="4" step="0.25" value="1"><div class="readout" id="sizeReadout"></div></div>
+      <div class="ctl"><label for="hz">Horizon (months): <span id="hzLbl"></span></label>
+        <input type="range" id="hz" min="6" max="48" step="1" value="48"></div>
+      <div class="ctl"><label class="toggle"><input type="checkbox" id="cumulate" checked> Cumulate log-diff → level (%)</label>
+        <label class="toggle"><input type="checkbox" id="band" checked> Show uncertainty band</label></div>
+      <h3>Response variables</h3>
+      <div class="ctl"><div class="row" style="margin-bottom:6px">
+        <button id="selAll">all</button><button id="selKey">key</button><button id="selNone">none</button></div>
+        <div class="checks" id="varChecks"></div></div>
+    </div>
+    <div><div class="hint" id="irfHint"></div><div class="grid" id="irfGrid"></div></div>
+  </div></section>
+
+  <!-- SCENARIO BUILDER -->
+  <section id="tab-scenb"><div class="layout">
+    <div class="controls">
+      <h3>Constraints</h3><div id="parts"></div>
+      <div class="row" style="margin-bottom:14px"><button id="addPart">+ add constraint</button></div>
+      <h3>Uncertainty</h3>
+      <div class="ctl">
+        <label class="toggle"><input type="checkbox" id="scBand"> Show conditional band (shock uncertainty)</label>
+        <div class="readout">68% interval from Monte-Carlo of the conditional predictive distribution (parameters fixed). ~300 draws.</div>
+      </div>
+      <h3>Show variables</h3>
+      <div class="ctl"><div class="row" style="margin-bottom:6px">
+        <button id="sAll">all</button><button id="sKey">key</button><button id="sNone">none</button></div>
+        <div class="checks" id="scVarChecks"></div></div>
+    </div>
+    <div>
+      <div id="feas" class="feas ok"></div>
+      <div class="legend">
+        <span class="swatch" style="border-top-color:var(--base);border-top-style:dashed"></span> baseline
+        &nbsp;&nbsp;<span class="swatch" style="border-top-color:var(--scen)"></span> scenario (median)
+        &nbsp;&nbsp;<span style="color:#c0392b">■</span> constrained variable</div>
+      <div class="grid" id="scGrid"></div>
+    </div>
+  </div></section>
+
+  <!-- COUNTERFACTUALS -->
+  <section id="tab-cf" style="display:none"><div class="layout">
+    <div class="controls">
+      <h3>Historical window</h3>
+      <div class="ctl"><label for="cfOrigin">Origin (last actual month)</label><select id="cfOrigin"></select></div>
+      <div class="ctl"><label for="cfH">Window length (months): <span id="cfHLbl">24</span></label>
+        <input type="range" id="cfH" min="6" max="36" step="1" value="24"></div>
+      <h3>Intervention</h3>
+      <div class="ctl"><label for="cfVar">Override variable</label><select id="cfVar"></select></div>
+      <div class="ctl"><label for="cfMode">How</label><select id="cfMode"></select>
+        <div id="cfParam"></div></div>
+      <div class="ctl"><label class="toggle"><input type="checkbox" id="cfOwn" checked> Confine to this variable's own shock</label>
+        <div class="readout">On = "the change comes only through this variable's structural shock" (a policy-style counterfactual).</div></div>
+      <h3>Show variables</h3>
+      <div class="ctl"><div class="row" style="margin-bottom:6px">
+        <button id="cAll">all</button><button id="cKey">key</button><button id="cNone">none</button></div>
+        <div class="checks" id="cfVarChecks"></div></div>
+    </div>
+    <div>
+      <div id="cfFeas" class="feas ok"></div>
+      <div class="legend">
+        <span class="swatch" style="border-top-color:var(--act)"></span> actual
+        &nbsp;&nbsp;<span class="swatch" style="border-top-color:var(--cf);border-top-style:dashed"></span> counterfactual
+        &nbsp;&nbsp;<span style="color:#c0392b">■</span> overridden variable</div>
+      <div class="grid" id="cfGrid"></div>
+    </div>
+  </div></section>
+
+  <!-- GALLERY -->
+  <section id="tab-scen" style="display:none"><div class="scenwrap">
+    <div class="scenlist" id="scenList"></div>
+    <div class="scenview" id="scenView"><div class="empty">Select a scenario.</div></div>
+  </div></section>
+</main>
+<div id="selftest"></div>
+<footer id="foot"></footer>
+
+<script>
+window.DASHBOARD_DATA = /*__DATA__*/ null;
+(function(){
+  const D=window.DASHBOARD_DATA, $=id=>document.getElementById(id);
+  if(!D){document.querySelector('main').innerHTML='<div class="empty">No data embedded. Build with <code>build_dashboard.m</code>.</div>';return;}
+  const names=D.meta.names, tcode=D.meta.tcode, K=D.meta.K, H=D.meta.H;
+  const isLevel=i=>tcode[i]==='level';
+  const KEY=(D.meta.key&&D.meta.key.length)?D.meta.key:names.slice(0,Math.min(6,K));
+  const dispScale=(D.meta.dispScale&&D.meta.dispScale.length===K)?D.meta.dispScale:names.map(()=>1);
+  const dispUnit =(D.meta.dispUnit &&D.meta.dispUnit.length===K) ?D.meta.dispUnit :names.map(()=>'');
+  $('sub').textContent=D.meta.subtitle||$('sub').textContent;
+  $('foot').textContent='Generated '+(D.meta.generated||'')+'  ·  K='+K+' variables, horizon '+H+' months';
+  const LINE='#0072B2';
+  const Theta=h=>D.irf.raw.point.map(r=>r.map(c=>c[h]));
+  const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const fmt=v=>{const a=Math.abs(v);return a>=100?v.toFixed(0):a>=1?v.toFixed(1):v.toFixed(2);};
+  const M=D.model, hasModel=!!(M&&M.Fbase);
+  const hasCF=!!(M&&M.A&&M.Y);
+
+  /* ---------- shared linear algebra ---------- */
+  function solveSym(G,b){const n=b.length,A=G.map(r=>r.slice()),x=b.slice();
+    for(let c=0;c<n;c++){let p=c;for(let r=c+1;r<n;r++)if(Math.abs(A[r][c])>Math.abs(A[p][c]))p=r;
+      [A[c],A[p]]=[A[p],A[c]];[x[c],x[p]]=[x[p],x[c]];const pv=A[c][c]||1e-300;
+      for(let r=c+1;r<n;r++){const f=A[r][c]/pv;if(f)for(let k=c;k<n;k++){A[r][k]-=f*A[c][k];}if(f)x[r]-=f*x[c];}}
+    for(let c=n-1;c>=0;c--){let s=x[c];for(let k=c+1;k<n;k++)s-=A[c][k]*x[k];x[c]=s/(A[c][c]||1e-300);}return x;}
+  // dfull = Mstr * vec, over Hn horizons (Theta blocks). vec length K*Hn.
+  function propagate(vec,Hn){const out=new Float64Array(K*Hn);
+    for(let t=1;t<=Hn;t++)for(let s=1;s<=t;s++){const Th=Theta(t-s),base=(s-1)*K;
+      for(let i=0;i<K;i++){let a=0;const Ti=Th[i];for(let j=0;j<K;j++)a+=Ti[j]*vec[base+j];out[(t-1)*K+i]+=a;}}
+    return out;}
+  // build R rows for constraints list [{v,h}] over horizon Hn -> array of Float64Array(K*Hn)
+  function buildR(cons,Hn){const KH=K*Hn;return cons.map(c=>{const row=new Float64Array(KH);
+    for(let s=1;s<=c.h;s++){const Th=Theta(c.h-s),base=(s-1)*K;for(let j=0;j<K;j++)row[base+j]=Th[c.v][j];}return row;});}
+  function gram(R,cons,extraDiag){const m=R.length,KH=R[0].length,G=[];let tr=0;
+    for(let a=0;a<m;a++){G[a]=new Array(m);for(let b=0;b<m;b++){let s=0;const ra=R[a],rb=R[b];for(let k=0;k<KH;k++)s+=ra[k]*rb[k];G[a][b]=s;}
+      if(extraDiag)G[a][a]+=extraDiag[a];tr+=G[a][a];}
+    const ridge=1e-9*tr/m;for(let a=0;a<m;a++)G[a][a]+=ridge;return G;}
+  let _g2=null;function gauss(){if(_g2!==null){const g=_g2;_g2=null;return g;}
+    let u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();
+    const r=Math.sqrt(-2*Math.log(u));_g2=r*Math.sin(2*Math.PI*v);return r*Math.cos(2*Math.PI*v);}
+  function quant(sorted,p){const n=sorted.length;if(n===1)return sorted[0];
+    const g=(i)=>((i+1)-0.5)/n;if(p<=g(0))return sorted[0];if(p>=g(n-1))return sorted[n-1];
+    let i=0;while(g(i+1)<p)i++;const w=(p-g(i))/(g(i+1)-g(i));return (1-w)*sorted[i]+w*sorted[i+1];}
+  // "nice" round axis bounds + tick values
+  function niceNum(x,round){if(!(x>0))return 1;const e=Math.floor(Math.log10(x)),f=x/Math.pow(10,e);
+    const nf=round?(f<1.5?1:f<3?2:f<7?5:10):(f<=1?1:f<=2?2:f<=5?5:10);return nf*Math.pow(10,e);}
+  function niceScale(lo,hi,m){if(!isFinite(lo)||!isFinite(hi)){lo=0;hi=1;}if(hi<=lo)hi=lo+(Math.abs(lo)||1)*0.1+1e-9;
+    const step=niceNum((hi-lo)/Math.max(1,m-1),true);const nlo=Math.floor(lo/step)*step,nhi=Math.ceil(hi/step)*step;
+    const ticks=[];for(let v=nlo;v<=nhi+step*0.5;v+=step)ticks.push(Math.abs(v)<step*1e-6?0:v);return {lo:nlo,hi:nhi,ticks};}
+  const yLabels=ticks=>ticks;
+
+  /* ================= IRF EXPLORER ================= */
+  const st={shock:0,size:1,hz:H,cumulate:true,band:D.irf.hasBand,shown:{}};
+  names.forEach((n,i)=>st.shown[i]=KEY.indexOf(n)>=0);
+  const shockSel=$('shock');names.forEach((n,i)=>{const o=document.createElement('option');o.value=i;o.textContent=n;shockSel.appendChild(o);});
+  const checks=$('varChecks');names.forEach((n,i)=>{const l=document.createElement('label');const cb=document.createElement('input');
+    cb.type='checkbox';cb.checked=st.shown[i];cb.dataset.i=i;cb.onchange=()=>{st.shown[i]=cb.checked;renderIRF();};
+    l.appendChild(cb);l.appendChild(document.createTextNode(' '+n+'  ('+tcode[i]+')'));checks.appendChild(l);});
+  const syncC=()=>[...checks.querySelectorAll('input')].forEach(cb=>cb.checked=st.shown[+cb.dataset.i]);
+  $('selAll').onclick=()=>{names.forEach((n,i)=>st.shown[i]=true);syncC();renderIRF();};
+  $('selNone').onclick=()=>{names.forEach((n,i)=>st.shown[i]=false);syncC();renderIRF();};
+  $('selKey').onclick=()=>{names.forEach((n,i)=>st.shown[i]=KEY.indexOf(n)>=0);syncC();renderIRF();};
+  shockSel.onchange=()=>{st.shock=+shockSel.value;renderIRF();};
+  $('size').oninput=e=>{st.size=+e.target.value;renderIRF();};
+  $('hz').oninput=e=>{st.hz=+e.target.value;renderIRF();};
+  $('cumulate').onchange=e=>{st.cumulate=e.target.checked;renderIRF();};
+  $('band').onchange=e=>{st.band=e.target.checked;renderIRF();};
+  if(!D.irf.hasBand){$('band').checked=false;$('band').disabled=true;}
+  const irfS=m=>st.cumulate?D.irf.cum[m]:D.irf.raw[m];
+  function irfResp(i,j){const p=irfS('point')[i][j].map(v=>v*st.size);let lo=null,hi=null;
+    if(st.band&&D.irf.hasBand){lo=irfS('lo')[i][j].map(v=>v*st.size);hi=irfS('hi')[i][j].map(v=>v*st.size);}return {p,lo,hi};}
+  function renderIRF(){$('hzLbl').textContent=st.hz;const j=st.shock,own=irfS('point')[j][j][0]*st.size;
+    const u=isLevel(j)?'pp':(st.cumulate?'% (level)':'dlog');
+    $('sizeReadout').textContent='impact on '+names[j]+': '+(own>=0?'+':'')+fmt(own)+' '+u+'   ( ×'+st.size.toFixed(2)+' SD )';
+    $('irfHint').innerHTML='Response to a <b>'+esc(names[j])+'</b> shock. '+(st.cumulate?'Log-diff cumulated to % level; ':'')+'level vars in pp.';
+    const g=$('irfGrid');g.innerHTML='';let any=false;
+    for(let i=0;i<K;i++){if(!st.shown[i])continue;any=true;const unit=isLevel(i)?'pp':(st.cumulate?'% level':'dlog growth');
+      g.insertAdjacentHTML('beforeend',miniChart(names[i],unit,irfResp(i,j),st.hz+1));}
+    if(!any)g.innerHTML='<div class="empty">Pick at least one response variable.</div>';}
+  function miniChart(title,unit,r,n){const W=270,Hc=156,mL=40,mR=8,mT=8,mB=26;const xs=i=>mL+(W-mL-mR)*(i/(n-1));
+    let dmin=0,dmax=0;const A=[r.p.slice(0,n)];if(r.lo){A.push(r.lo.slice(0,n));A.push(r.hi.slice(0,n));}
+    A.forEach(a=>a.forEach(v=>{if(v<dmin)dmin=v;if(v>dmax)dmax=v;}));
+    const ns=niceScale(dmin,dmax,4),lo=ns.lo,hi=ns.hi;const ys=v=>mT+(Hc-mT-mB)*(1-(v-lo)/(hi-lo));
+    const pth=a=>a.slice(0,n).map((v,i)=>(i?'L':'M')+xs(i).toFixed(1)+' '+ys(v).toFixed(1)).join(' ');
+    let band='';if(r.lo){const top=r.hi.slice(0,n).map((v,i)=>(i?'L':'M')+xs(i).toFixed(1)+' '+ys(v).toFixed(1)).join(' ');
+      const bot=r.lo.slice(0,n).map((v,i)=>'L'+xs(i).toFixed(1)+' '+ys(v).toFixed(1)).reverse().join(' ');band='<path d="'+top+' '+bot+' Z" fill="'+LINE+'" opacity="0.14"/>';}
+    const y0=(0>=lo&&0<=hi)?ys(0):null;
+    const tk=ns.ticks.map(v=>'<text x="'+(mL-4)+'" y="'+(ys(v)+3).toFixed(1)+'" font-size="9" text-anchor="end" fill="#5b6570">'+fmt(v)+'</text>').join('');
+    // x-axis month ticks at 12, 24, 36, 48 within range (horizon index = months)
+    let xtk='';for(let mm=12;mm<=n-1;mm+=12){const x=xs(mm);
+      xtk+='<line x1="'+x.toFixed(1)+'" y1="'+(Hc-mB)+'" x2="'+x.toFixed(1)+'" y2="'+(Hc-mB+4)+'" stroke="#9aa4ad"/>'+
+           '<text x="'+x.toFixed(1)+'" y="'+(Hc-mB+15)+'" font-size="9" text-anchor="middle" fill="#5b6570">'+mm+'</text>';}
+    return '<div class="card"><h4>'+esc(title)+' <span class="unit">'+esc(unit)+'</span></h4><svg viewBox="0 0 '+W+' '+Hc+'" width="100%">'+
+      '<line x1="'+mL+'" y1="'+(Hc-mB)+'" x2="'+(W-mR)+'" y2="'+(Hc-mB)+'" stroke="#e2e2e2"/>'+
+      (y0!==null?'<line x1="'+mL+'" y1="'+y0.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y0.toFixed(1)+'" stroke="#9aa4ad" stroke-dasharray="3 3"/>':'')+
+      band+'<path d="'+pth(r.p)+'" fill="none" stroke="'+LINE+'" stroke-width="2"/>'+tk+xtk+
+      '<text x="'+((W+mL)/2)+'" y="'+(Hc-2)+'" font-size="9" text-anchor="middle" fill="#5b6570">horizon (months)</text></svg></div>';}
+
+  /* ================= SCENARIO BUILDER (WZ, live) ================= */
+  const sc={shown:{},parts:[],band:false,_bandCache:null};
+  names.forEach((n,i)=>sc.shown[i]=KEY.indexOf(n)>=0);
+  function rampHold(x0,to,mo,n){const a=[];for(let h=1;h<=n;h++)a.push(h<=mo?x0+(to-x0)*(h/mo):to);return a;}
+  function levelToUnits(lev,x0,lv){if(lv)return lev.slice();const o=[];let p=x0;for(let h=0;h<lev.length;h++){o.push(Math.log(lev[h])-Math.log(p));p=lev[h];}return o;}
+  function padNaN(a,n){const o=a.slice(0,n);while(o.length<n)o.push(NaN);return o;}
+  function policyPath(r0,n,step,peak,holdN,fl){const p=[];let r=r0,ph='up',hd=0;for(let h=1;h<=n;h++){
+    if(ph==='up'){r=Math.min(r+step,peak);if(r>=peak-1e-12){ph='hold';hd=0;}}else if(ph==='down')r=Math.max(r-step,fl);
+    p.push(r);if(ph==='hold'){hd++;if(hd>=holdN)ph='down';}}return p;}
+  function findDate(y,m){return M.dates.indexOf(String(y)+'-'+String(m).padStart(2,'0'));}
+  function replayGrowth(col,y,m,months,lv){const n=Math.min(months,H);let src,jj;
+    if(lv){src=col.slice();jj=findDate(y,m);}else{src=[];for(let t=1;t<col.length;t++)src.push(Math.log(col[t])-Math.log(col[t-1]));jj=findDate(y,m)-1;}
+    if(jj<0||jj+n>src.length)return padNaN(src.slice(src.length-n),H);return padNaN(src.slice(jj,jj+n),H);}
+  function buildPart(part){const v=part.v,lv=isLevel(v),x0=M.lastLevels[v];let path;
+    const g=(k,d)=>(part[k]===undefined||part[k]===''||isNaN(part[k]))?d:+part[k];
+    switch(part.type){
+      case 'ramp':path=levelToUnits(rampHold(x0,g('to',1.2*x0),g('months',6),H),x0,lv);break;
+      case 'hold':path=levelToUnits(Array(H).fill(g('at',x0)),x0,lv);break;
+      case 'pulse':{const nC=Math.min(g('months',3)+g('hold',3),H);path=padNaN(levelToUnits(rampHold(x0,g('to',1.2*x0),g('months',3),nC),x0,lv).slice(0,nC),H);break;}
+      case 'policy':path=policyPath(x0,H,g('step',0.25),g('peak',x0+1.5),g('hold',12),g('floor',x0));break;
+      case 'replay':path=replayGrowth(M.levels.map(r=>r[v]),g('year',2008),g('month',1),g('months',24),lv);break;
+      default:path=Array(H).fill(NaN);}
+    if(part.w1||part.w2){const a=part.w1?+part.w1:1,b=part.w2?+part.w2:H;path=path.map((x,h)=>((h+1)>=a&&(h+1)<=b)?x:NaN);}
+    const sd=Array(H).fill(NaN);if(part.sd!==undefined&&part.sd!==''&&!isNaN(part.sd))for(let h=0;h<H;h++)if(!isNaN(path[h]))sd[h]=+part.sd;
+    return {v,path,sd};}
+  function scenConstraints(parts){const built=parts.map(buildPart),cons=[];
+    built.forEach(b=>{for(let h=1;h<=H;h++){const val=b.path[h-1];if(!isNaN(val))cons.push({v:b.v,h,tgt:val-M.Fbase[h-1][b.v],sd:isNaN(b.sd[h-1])?0:b.sd[h-1]});}});
+    return {built,cons};}
+  function wzSolve(parts){const {built,cons}=scenConstraints(parts);const m=cons.length;
+    if(m===0)return {Fcond:M.Fbase.map(r=>r.slice()),normEps:0,ratio:0,resid:0,m:0,cvars:built.map(b=>b.v)};
+    const R=buildR(cons,H),KH=K*H,G=gram(R,cons,cons.map(c=>c.sd*c.sd)),rvec=cons.map(c=>c.tgt),y=solveSym(G,rvec);
+    const shat=new Float64Array(KH);for(let a=0;a<m;a++){const ya=y[a],ra=R[a];if(ya)for(let k=0;k<KH;k++)shat[k]+=ra[k]*ya;}
+    const df=propagate(shat,H),Fcond=M.Fbase.map(r=>r.slice());for(let h=0;h<H;h++)for(let i=0;i<K;i++)Fcond[h][i]+=df[h*K+i];
+    let ne=0;for(let k=0;k<KH;k++)ne+=shat[k]*shat[k];ne=Math.sqrt(ne);
+    let rs=0;for(let a=0;a<m;a++){let s=0;const ra=R[a];for(let k=0;k<KH;k++)s+=ra[k]*shat[k];rs+=(s-rvec[a])*(s-rvec[a]);}
+    return {Fcond,normEps:ne,ratio:ne/Math.sqrt(KH),resid:Math.sqrt(rs),m,cvars:built.map(b=>b.v),R,G,shat};}
+  // Monte-Carlo shock-uncertainty band (parameters fixed); matches wzBands shock component
+  function wzBandMC(parts,shownIdx,nDraws){const {cons}=scenConstraints(parts);const m=cons.length;if(m===0)return null;
+    const R=buildR(cons,H),KH=K*H,G=gram(R,cons,cons.map(c=>c.sd*c.sd)),sdv=cons.map(c=>c.sd);
+    const store={};shownIdx.forEach(i=>store[i]=Array.from({length:H},()=>[]));
+    for(let d=0;d<nDraws;d++){const z=new Float64Array(KH);for(let k=0;k<KH;k++)z[k]=gauss();
+      const Rz=new Array(m);for(let a=0;a<m;a++){let s=0;const ra=R[a];for(let k=0;k<KH;k++)s+=ra[k]*z[k];Rz[a]=s+sdv[a]*gauss();}
+      const gy=solveSym(G,Rz);const e=new Float64Array(KH);for(let k=0;k<KH;k++)e[k]=z[k];
+      for(let a=0;a<m;a++){const ga=gy[a],ra=R[a];if(ga)for(let k=0;k<KH;k++)e[k]-=ra[k]*ga;}
+      // e is a draw of (eps - projection); add ehat via the point solve once (mean)
+      const df=propagate(e,H);
+      shownIdx.forEach(i=>{const col=[];for(let h=0;h<H;h++)col.push(df[h*K+i]);store[i].push(col);});}
+    // combine with the point (mean) conditional forecast
+    const pt=wzSolve(parts);const out={lo:{},hi:{},med:{}};const qlo=0.16,qhi=0.84;
+    shownIdx.forEach(i=>{out.lo[i]=[];out.hi[i]=[];out.med[i]=[];
+      for(let h=0;h<H;h++){const draws=store[i].map(c=>{const dev=c[h];const col=[];// build full level path? need cumulative for dlog
+        return dev;});
+        // reconstruct level draws: level_h depends on cumulative dlog up to h -> need per-draw cumulative
+        const arr=store[i].map(cd=>{let lv;if(isLevel(i))lv=pt.Fcond[h][i]+cd[h];else{let c=0;for(let s=0;s<=h;s++)c+=pt.Fcond[s][i]+cd[s];lv=M.lastLevels[i]*Math.exp(c);}return lv;}).sort((a,b)=>a-b);
+        out.lo[i].push(quant(arr,qlo));out.hi[i].push(quant(arr,qhi));out.med[i].push(quant(arr,0.5));}});
+    return out;}
+  window.__wz={wzSolve,buildPart,wzBandMC};
+  function reconLevel(fcCol,i){if(isLevel(i))return fcCol.slice();const o=[];let c=0;for(let h=0;h<fcCol.length;h++){c+=fcCol[h];o.push(M.lastLevels[i]*Math.exp(c));}return o;}
+
+  const TYPES=[['ramp','ramp to level, then hold'],['hold','hold at a level'],['pulse','ramp, hold, then free'],
+               ['policy','step / hold / ease (level vars)'],['replay','replay history from a date']];
+  const defaultPart=()=>({v:names.indexOf('oil')>=0?names.indexOf('oil'):0,type:'ramp'});
+  const rnd=x=>Math.round(x), rnd2=x=>Math.round(x*100)/100;
+  function paramFields(p){const x0=M.lastLevels[p.v],lv=isLevel(p.v);
+    const num=(k,lab,def,step)=>'<div><label>'+lab+'</label><input type="number" data-k="'+k+'" value="'+(p[k]!==undefined?p[k]:def)+'" step="'+(step||'any')+'"></div>';
+    switch(p.type){case 'ramp':return num('to','to (level)',rnd(lv?x0+1:1.3*x0))+num('months','over months',6,1);
+      case 'hold':return num('at','at (level)',rnd(x0));
+      case 'pulse':return num('to','to (level)',rnd(lv?x0+1.5:1.3*x0))+num('months','ramp months',3,1)+num('hold','hold months',3,1);
+      case 'policy':return num('step','step (pp)',0.25)+num('peak','peak (pp)',rnd2(x0+1.5))+num('hold','hold months',12,1)+num('floor','floor (pp)',rnd2(x0));
+      case 'replay':return num('year','from year',2008,1)+num('month','from month',1,1)+num('months','months',24,1);default:return '';}}
+  function renderParts(){const box=$('parts');box.innerHTML='';
+    sc.parts.forEach((p,idx)=>{const el=document.createElement('div');el.className='part';
+      const opts=names.map((n,i)=>'<option value="'+i+'"'+(i===p.v?' selected':'')+'>'+n+' ('+tcode[i]+')</option>').join('');
+      const tsel=TYPES.map(t=>'<option value="'+t[0]+'"'+(t[0]===p.type?' selected':'')+'>'+t[1]+'</option>').join('');
+      el.innerHTML='<div class="phead"><select data-f="v">'+opts+'</select><button data-rm="1">✕</button></div>'+
+        '<div style="margin-bottom:6px"><select data-f="type">'+tsel+'</select></div><div class="params">'+paramFields(p)+
+        '<div><label>window from</label><input type="number" data-k="w1" value="'+(p.w1||'')+'" step="1" placeholder="1"></div>'+
+        '<div><label>window to</label><input type="number" data-k="w2" value="'+(p.w2||'')+'" step="1" placeholder="'+H+'"></div>'+
+        '<div><label>soft sd</label><input type="number" data-k="sd" value="'+(p.sd||'')+'" step="any" placeholder="hard"></div></div>';
+      box.appendChild(el);
+      el.querySelector('[data-f="v"]').onchange=e=>{p.v=+e.target.value;renderParts();recompute();};
+      el.querySelector('[data-f="type"]').onchange=e=>{p.type=e.target.value;renderParts();recompute();};
+      el.querySelector('[data-rm]').onclick=()=>{sc.parts.splice(idx,1);renderParts();recompute();};
+      el.querySelectorAll('input[data-k]').forEach(inp=>inp.oninput=()=>{p[inp.dataset.k]=inp.value===''?undefined:inp.value;recompute();});});}
+  const scChecks=$('scVarChecks');names.forEach((n,i)=>{const l=document.createElement('label');const cb=document.createElement('input');
+    cb.type='checkbox';cb.checked=sc.shown[i];cb.dataset.i=i;cb.onchange=()=>{sc.shown[i]=cb.checked;recompute();};
+    l.appendChild(cb);l.appendChild(document.createTextNode(' '+n));scChecks.appendChild(l);});
+  const syncS=()=>[...scChecks.querySelectorAll('input')].forEach(cb=>cb.checked=sc.shown[+cb.dataset.i]);
+  $('sAll').onclick=()=>{names.forEach((n,i)=>sc.shown[i]=true);syncS();recompute();};
+  $('sNone').onclick=()=>{names.forEach((n,i)=>sc.shown[i]=false);syncS();recompute();};
+  $('sKey').onclick=()=>{names.forEach((n,i)=>sc.shown[i]=KEY.indexOf(n)>=0);syncS();recompute();};
+  $('addPart').onclick=()=>{sc.parts.push(defaultPart());renderParts();recompute();};
+  $('scBand').onchange=e=>{sc.band=e.target.checked;recompute();};
+  function recompute(){if(!hasModel){$('scGrid').innerHTML='<div class="empty">No forecast model embedded (older build). Rebuild to enable live scenarios.</div>';return;}
+    const res=wzSolve(sc.parts),cv=new Set(res.cvars),f=$('feas');
+    if(res.m===0){f.className='feas ok';f.textContent='Add a constraint to compute a scenario. Baseline shown.';}
+    else{const cls=res.ratio<1.5?'ok':res.ratio<3?'warn':'bad';f.className='feas '+cls;
+      f.innerHTML='<b>Feasibility:</b> ‖ε‖ = '+res.normEps.toFixed(1)+'  ( '+res.ratio.toFixed(2)+'× a typical shock draw )  ·  '+
+        res.m+' binding constraint'+(res.m>1?'s':'')+'  ·  residual '+res.resid.toExponential(1)+
+        (cls==='ok'?'  — plausible.':cls==='warn'?'  — demanding.':'  — extreme; near-impossible for the model.');}
+    const shownIdx=[];for(let i=0;i<K;i++)if(sc.shown[i])shownIdx.push(i);
+    let bands=null;
+    if(sc.band&&res.m>0){bands=wzBandMC(sc.parts,shownIdx,300);}
+    const grid=$('scGrid');grid.innerHTML='';let any=false;
+    shownIdx.forEach(i=>{any=true;const base=reconLevel(M.Fbase.map(r=>r[i]),i);const scen=reconLevel(res.Fcond.map(r=>r[i]),i);
+      const bd=bands?{lo:bands.lo[i],hi:bands.hi[i]}:null;grid.insertAdjacentHTML('beforeend',levelChart(i,base,scen,cv.has(i),bd));});
+    if(!any)grid.innerHTML='<div class="empty">Tick some variables to display.</div>';}
+  const HISTN=Math.min(18,(M&&M.levels)?M.levels.length:0);
+  function levelChart(i,base,scen,constrained,band){const W=290,Hc=170,mL=48,mR=8,mT=20,mB=26;
+    const scl=dispScale[i];
+    const hist=(M.levels||[]).slice(M.levels.length-HISTN).map(r=>r[i]*scl);
+    base=base.map(v=>v*scl); scen=scen.map(v=>v*scl);
+    if(band)band={lo:band.lo.map(v=>v*scl),hi:band.hi.map(v=>v*scl)};
+    const nH=hist.length,nf=base.length,n=nH+nf;
+    const xs=k=>mL+(W-mL-mR)*(k/(n-1));let dmin=Infinity,dmax=-Infinity;
+    [hist,base,scen].forEach(a=>a.forEach(v=>{if(v<dmin)dmin=v;if(v>dmax)dmax=v;}));if(band){band.lo.forEach(v=>{if(v<dmin)dmin=v;});band.hi.forEach(v=>{if(v>dmax)dmax=v;});}
+    const ns=niceScale(dmin,dmax,4),lo=ns.lo,hi=ns.hi;const ys=v=>mT+(Hc-mT-mB)*(1-(v-lo)/(hi-lo));
+    const ln=(a,off)=>a.map((v,k)=>((k?'L':'M'))+xs(off+k).toFixed(1)+' '+ys(v).toFixed(1)).join(' ');
+    let bandSvg='';if(band){const top=band.hi.map((v,k)=>(k?'L':'M')+xs(nH+k).toFixed(1)+' '+ys(v).toFixed(1)).join(' ');
+      const bot=band.lo.map((v,k)=>'L'+xs(nH+k).toFixed(1)+' '+ys(v).toFixed(1)).reverse().join(' ');bandSvg='<path d="'+top+' '+bot+' Z" fill="'+LINE+'" opacity="0.13"/>';}
+    const xsplit=xs(nH-0.5);const tk=ns.ticks.map(v=>'<text x="'+(mL-4)+'" y="'+(ys(v)+3).toFixed(1)+'" font-size="9" text-anchor="end" fill="#5b6570">'+fmt(v)+'</text>').join('');
+    // forecast-horizon month ticks (0 at the split, then 12/24/36/48)
+    let xtk='<text x="'+xs(nH).toFixed(1)+'" y="'+(Hc-mB+15)+'" font-size="9" text-anchor="middle" fill="#5b6570">0</text>';
+    for(let mm=12;mm<=nf-1;mm+=12){const x=xs(nH+mm);
+      xtk+='<line x1="'+x.toFixed(1)+'" y1="'+(Hc-mB)+'" x2="'+x.toFixed(1)+'" y2="'+(Hc-mB+4)+'" stroke="#9aa4ad"/>'+
+           '<text x="'+x.toFixed(1)+'" y="'+(Hc-mB+15)+'" font-size="9" text-anchor="middle" fill="#5b6570">'+mm+'</text>';}
+    const unit=dispUnit[i]?dispUnit[i]:('level'+(isLevel(i)?', pp':''));
+    return '<div class="card"><h4>'+(constrained?'<span style="color:#c0392b">●</span> ':'')+esc(names[i])+' <span class="unit">'+esc(unit)+'</span></h4>'+
+      '<svg viewBox="0 0 '+W+' '+Hc+'" width="100%">'+
+      '<line x1="'+mL+'" y1="'+(Hc-mB)+'" x2="'+(W-mR)+'" y2="'+(Hc-mB)+'" stroke="#e2e2e2"/>'+
+      '<line x1="'+xsplit.toFixed(1)+'" y1="'+mT+'" x2="'+xsplit.toFixed(1)+'" y2="'+(Hc-mB)+'" stroke="#e2e2e2"/>'+
+      bandSvg+'<path d="'+ln(hist,0)+'" fill="none" stroke="#333" stroke-width="1.5"/>'+
+      '<path d="'+ln(base,nH)+'" fill="none" stroke="var(--base)" stroke-width="2" stroke-dasharray="5 4"/>'+
+      '<path d="'+ln(scen,nH)+'" fill="none" stroke="var(--scen)" stroke-width="2.4"/>'+tk+xtk+
+      '<text x="'+mL+'" y="12" font-size="9" fill="#9aa4ad">history</text><text x="'+(xsplit+4).toFixed(1)+'" y="12" font-size="9" fill="#9aa4ad">forecast (months)</text></svg></div>';}
+
+  /* ================= COUNTERFACTUALS (live) ================= */
+  const cf={origin:0,H:24,v:0,mode:'freeze',delta:1,value:0,own:true,shown:{}};
+  names.forEach((n,i)=>cf.shown[i]=KEY.indexOf(n)>=0);
+  function cfBaseline(t0,Hn){const p=M.p,Kp=K*p,A=M.A,mu=M.mu;const state=new Float64Array(Kp);
+    for(let i=1;i<=p;i++)for(let v=0;v<K;v++)state[(i-1)*K+v]=M.Y[t0-(i-1)][v];
+    const Fb=[];let Yh=state;for(let h=0;h<Hn;h++){const nx=new Float64Array(Kp);
+      for(let r=0;r<Kp;r++){let s=mu[r];const Ar=A[r];for(let c=0;c<Kp;c++)s+=Ar[c]*Yh[c];nx[r]=s;}
+      Yh=nx;const row=[];for(let v=0;v<K;v++)row.push(Yh[v]);Fb.push(row);}return Fb;}
+  function cfSolve(){const t0=cf.origin,Hn=cf.H,v=cf.v,lv=isLevel(v);
+    const Fb=cfBaseline(t0,Hn),actual=[];for(let h=1;h<=Hn;h++)actual.push(M.Y[t0+h].slice());
+    const tgt=new Array(Hn).fill(NaN);for(let h=0;h<Hn;h++){const a=actual[h][v];
+      if(cf.mode==='shift')tgt[h]=a+cf.delta;else if(cf.mode==='hold')tgt[h]=cf.value;else if(cf.mode==='freeze')tgt[h]=0;}
+    const cons=[];for(let h=1;h<=Hn;h++)if(!isNaN(tgt[h-1]))cons.push({v,h,rcf:tgt[h-1]-Fb[h-1][v],ract:actual[h-1][v]-Fb[h-1][v]});
+    const m=cons.length,KH=K*Hn;if(m===0)return {actual,cf:actual.map(r=>r.slice()),Fb,normEps:0,ratio:0,v,Hn};
+    const R=buildR(cons.map(c=>({v:c.v,h:c.h})),Hn);
+    // column selection: confine to own shock if requested
+    let colsel=null;if(cf.own){colsel=[];for(let s=0;s<Hn;s++)colsel.push(s*K+v);}
+    // Rsub = R[:,colsel]; solve min-norm via Gram on Rsub
+    const cols=colsel||Array.from({length:KH},(_,k)=>k);
+    const Rsub=R.map(row=>cols.map(k=>row[k]));
+    const G=[];let tr=0;for(let a=0;a<m;a++){G[a]=new Array(m);for(let b=0;b<m;b++){let s=0;for(let k=0;k<cols.length;k++)s+=Rsub[a][k]*Rsub[b][k];G[a][b]=s;}tr+=G[a][a];}
+    const ridge=1e-9*tr/m;for(let a=0;a<m;a++)G[a][a]+=ridge;
+    const b=cons.map(c=>c.rcf-c.ract),y=solveSym(G,b);
+    const dsub=new Array(cols.length).fill(0);for(let a=0;a<m;a++){const ya=y[a];if(ya)for(let k=0;k<cols.length;k++)dsub[k]+=Rsub[a][k]*ya;}
+    const delta=new Float64Array(KH);for(let k=0;k<cols.length;k++)delta[cols[k]]=dsub[k];
+    const df=propagate(delta,Hn),cfp=actual.map(r=>r.slice());for(let h=0;h<Hn;h++)for(let i=0;i<K;i++)cfp[h][i]+=df[h*K+i];
+    let ne=0;for(let k=0;k<KH;k++)ne+=delta[k]*delta[k];ne=Math.sqrt(ne);
+    return {actual,cf:cfp,Fb,normEps:ne,ratio:ne/Math.sqrt(KH),v,Hn};}
+  window.__cf={cfSolve,cfBaseline};
+  const CFMODES={level:[['shift','shift actual by +Δ (pp)'],['hold','hold at value']],
+                 dlog:[['freeze','freeze level (no growth)'],['shift','shift growth by +Δ']]};
+  function cfModeOptions(){const lv=isLevel(cf.v);const ms=CFMODES[lv?'level':'dlog'];
+    if(!ms.find(x=>x[0]===cf.mode))cf.mode=ms[0][0];
+    $('cfMode').innerHTML=ms.map(x=>'<option value="'+x[0]+'"'+(x[0]===cf.mode?' selected':'')+'>'+x[1]+'</option>').join('');
+    let p='';if(cf.mode==='shift')p='<label>Δ ('+(lv?'pp':'growth')+')</label><input type="number" id="cfDelta" value="'+cf.delta+'" step="any">';
+    else if(cf.mode==='hold')p='<label>value</label><input type="number" id="cfValue" value="'+(cf.value||rnd2(M.lastLevels[cf.v]))+'" step="any">';
+    $('cfParam').innerHTML=p;
+    if($('cfDelta'))$('cfDelta').oninput=e=>{cf.delta=+e.target.value;cfRender();};
+    if($('cfValue'))$('cfValue').oninput=e=>{cf.value=+e.target.value;cfRender();};}
+  function cfInit(){if(!hasCF){$('cfGrid').innerHTML='<div class="empty">This build has no historical model embedded. Rebuild with build_dashboard.m to enable counterfactuals.</div>';
+      $('cfFeas').className='feas warn';$('cfFeas').textContent='No history embedded.';return;}
+    const T=M.Y.length,p=M.p;const os=$('cfOrigin');os.innerHTML='';
+    for(let t=p+cf.H;t<=T-cf.H-1;t++){const o=document.createElement('option');o.value=t;o.textContent=M.trDates[t];os.appendChild(o);}
+    // default origin 2021-12 if present
+    let def=M.trDates.indexOf('2021-12');if(def<0||def<p+cf.H||def>T-cf.H-1)def=+os.options[Math.floor(os.options.length/2)].value;
+    cf.origin=def;os.value=String(def);
+    const vs=$('cfVar');vs.innerHTML=names.map((n,i)=>'<option value="'+i+'"'+(i===cf.v?' selected':'')+'>'+n+' ('+tcode[i]+')</option>').join('');
+    os.onchange=e=>{cf.origin=+e.target.value;cfRender();};
+    $('cfH').oninput=e=>{cf.H=+e.target.value;$('cfHLbl').textContent=cf.H;cfInitOrigins();cfRender();};
+    vs.onchange=e=>{cf.v=+e.target.value;cfModeOptions();cfRender();};
+    $('cfMode').onchange=e=>{cf.mode=e.target.value;cfModeOptions();cfRender();};
+    $('cfOwn').onchange=e=>{cf.own=e.target.checked;cfRender();};
+    const cc=$('cfVarChecks');names.forEach((n,i)=>{const l=document.createElement('label');const cb=document.createElement('input');
+      cb.type='checkbox';cb.checked=cf.shown[i];cb.dataset.i=i;cb.onchange=()=>{cf.shown[i]=cb.checked;cfRender();};
+      l.appendChild(cb);l.appendChild(document.createTextNode(' '+n));cc.appendChild(l);});
+    const sync=()=>[...cc.querySelectorAll('input')].forEach(cb=>cb.checked=cf.shown[+cb.dataset.i]);
+    $('cAll').onclick=()=>{names.forEach((n,i)=>cf.shown[i]=true);sync();cfRender();};
+    $('cNone').onclick=()=>{names.forEach((n,i)=>cf.shown[i]=false);sync();cfRender();};
+    $('cKey').onclick=()=>{names.forEach((n,i)=>cf.shown[i]=KEY.indexOf(n)>=0);sync();cfRender();};
+    cfModeOptions();cfRender();}
+  function cfInitOrigins(){const T=M.Y.length,p=M.p,os=$('cfOrigin'),cur=cf.origin;os.innerHTML='';
+    for(let t=p+cf.H;t<=T-cf.H-1;t++){const o=document.createElement('option');o.value=t;o.textContent=M.trDates[t];os.appendChild(o);}
+    let nv=cur;if(nv<p+cf.H)nv=p+cf.H;if(nv>T-cf.H-1)nv=T-cf.H-1;cf.origin=nv;os.value=String(nv);}
+  function cfRender(){if(!hasCF)return;const res=cfSolve();const f=$('cfFeas');
+    const cls=res.ratio<1.5?'ok':res.ratio<3?'warn':'bad';f.className='feas '+cls;
+    f.innerHTML='<b>Perturbation:</b> ‖δ‖ = '+res.normEps.toFixed(1)+' ( '+res.ratio.toFixed(2)+'× typical )  ·  origin '+esc(M.trDates[cf.origin])+
+      ', '+res.Hn+'-month window'+(cf.own?', via '+esc(names[cf.v])+'’s own shock':'')+
+      '.  <span style="color:#8a6d3b">Lucas caveat: the estimated VAR is held fixed, so read this as the model’s internal propagation, not what the economy would truly have done.</span>';
+    const grid=$('cfGrid');grid.innerHTML='';let any=false;
+    for(let i=0;i<K;i++){if(!cf.shown[i])continue;any=true;
+      const lv=isLevel(i);let act,cfc,unit;
+      if(lv){const scl=dispScale[i];act=res.actual.map(r=>r[i]*scl);cfc=res.cf.map(r=>r[i]*scl);unit=dispUnit[i]?dispUnit[i]:'level, pp';}
+      else{act=[];cfc=[];let ca=0,cc=0;for(let h=0;h<res.Hn;h++){ca+=res.actual[h][i];cc+=res.cf[h][i];act.push(100*ca);cfc.push(100*cc);}unit='cumulative %, since origin';}
+      grid.insertAdjacentHTML('beforeend',cfChart(i,act,cfc,unit,i===cf.v));}
+    if(!any)grid.innerHTML='<div class="empty">Tick some variables to display.</div>';}
+  function cfChart(i,act,cfc,unit,overridden){const W=290,Hc=165,mL=44,mR=10,mT=20,mB=22;const n=act.length;
+    const xs=k=>mL+(W-mL-mR)*(k/(n-1));let dmin=Infinity,dmax=-Infinity;[act,cfc].forEach(a=>a.forEach(v=>{if(v<dmin)dmin=v;if(v>dmax)dmax=v;}));
+    const ns=niceScale(dmin,dmax,4),lo=ns.lo,hi=ns.hi;const ys=v=>mT+(Hc-mT-mB)*(1-(v-lo)/(hi-lo));
+    const ln=a=>a.map((v,k)=>(k?'L':'M')+xs(k).toFixed(1)+' '+ys(v).toFixed(1)).join(' ');
+    const y0=(0>=lo&&0<=hi)?ys(0):null;const gap=cfc[n-1]-act[n-1];
+    const tk=ns.ticks.map(v=>'<text x="'+(mL-4)+'" y="'+(ys(v)+3).toFixed(1)+'" font-size="9" text-anchor="end" fill="#5b6570">'+fmt(v)+'</text>').join('');
+    let xtk='';for(let mm=6;mm<=n-1;mm+=6){const x=xs(mm);xtk+='<line x1="'+x.toFixed(1)+'" y1="'+(Hc-mB)+'" x2="'+x.toFixed(1)+'" y2="'+(Hc-mB+4)+'" stroke="#9aa4ad"/><text x="'+x.toFixed(1)+'" y="'+(Hc-mB+15)+'" font-size="9" text-anchor="middle" fill="#5b6570">'+mm+'</text>';}
+    return '<div class="card"><h4>'+(overridden?'<span style="color:#c0392b">●</span> ':'')+esc(names[i])+' <span class="unit">'+unit+'</span></h4>'+
+      '<svg viewBox="0 0 '+W+' '+Hc+'" width="100%">'+(y0!==null?'<line x1="'+mL+'" y1="'+y0.toFixed(1)+'" x2="'+(W-mR)+'" y2="'+y0.toFixed(1)+'" stroke="#9aa4ad" stroke-dasharray="3 3"/>':'')+
+      '<line x1="'+mL+'" y1="'+(Hc-mB)+'" x2="'+(W-mR)+'" y2="'+(Hc-mB)+'" stroke="#e2e2e2"/>'+
+      '<path d="'+ln(act)+'" fill="none" stroke="var(--act)" stroke-width="2"/>'+
+      '<path d="'+ln(cfc)+'" fill="none" stroke="var(--cf)" stroke-width="2.4" stroke-dasharray="6 4"/>'+tk+xtk+
+      '<text x="'+(W-mR)+'" y="'+(ys(cfc[n-1])-3).toFixed(1)+'" font-size="10" text-anchor="end" fill="'+'#c0392b'+'">'+(gap>=0?'+':'')+fmt(gap)+'</text>'+
+      '<text x="'+((W+mL)/2)+'" y="'+(Hc-2)+'" font-size="9" text-anchor="middle" fill="#5b6570">months since origin</text></svg></div>';}
+
+  /* ================= gallery (grouped, with descriptions) ================= */
+  const scen=D.scenarios||[],list=$('scenList'),view=$('scenView');
+  if(!scen.length){list.innerHTML='<div class="empty">No scenario figures were exported. Run the scenario scripts (or run_all), then rebuild.</div>';}
+  else{
+    const order=[],gmap={};
+    scen.forEach(s=>{const g=s.group||s.section||'Scenarios';if(!gmap[g]){gmap[g]=[];order.push(g);}gmap[g].push(s);});
+    const showScen=(b,s,g)=>{[...list.querySelectorAll('button')].forEach(x=>x.classList.remove('active'));b.classList.add('active');
+      view.innerHTML='<div><span class="badge">'+esc(g)+'</span></div><h3>'+esc(s.title)+'</h3>'+
+        (s.desc?'<p class="scendesc">'+esc(s.desc)+'</p>':'')+'<img src="'+s.img+'" alt="'+esc(s.title)+'">';};
+    let first=null;
+    order.forEach(g=>{const h=document.createElement('div');h.className='scengroup';h.textContent=g;list.appendChild(h);
+      gmap[g].forEach(s=>{const b=document.createElement('button');b.textContent=s.title;
+        b.onclick=()=>showScen(b,s,g);list.appendChild(b);if(!first)first=()=>showScen(b,s,g);});});
+    if(first)first();
+  }
+
+  /* ================= tabs ================= */
+  let cfStarted=false;
+  document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');
+    $('tab-irf').style.display=t.dataset.tab==='irf'?'block':'none';
+    $('tab-scenb').style.display=t.dataset.tab==='scenb'?'block':'none';
+    $('tab-cf').style.display=t.dataset.tab==='cf'?'block':'none';
+    $('tab-scen').style.display=t.dataset.tab==='scen'?'block':'none';
+    if(t.dataset.tab==='cf'&&!cfStarted){cfStarted=true;cfInit();}
+  });
+
+  /* init */
+  syncC();renderIRF();
+  if(hasModel){sc.parts=[defaultPart()];renderParts();syncS();recompute();}
+  else{$('feas').className='feas warn';$('feas').textContent='No forecast model embedded — rebuild with build_dashboard.m.';}
+})();
+</script>
+</body>
+</html>
